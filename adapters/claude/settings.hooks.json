@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.keel/engine/hook.py\" claude session-start", "timeout": 15 }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.keel/engine/hook.py\" claude pre-tool", "timeout": 30 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.keel/engine/hook.py\" claude stop", "timeout": 15 }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+# Keel configuration — edited by the HUMAN only (the guard blocks agent edits).
+# Paths are relative to the project root, use forward slashes, matched case-insensitively.
+# "**" and "*" both match across folders.
+
+[project]
+name = ""                      # empty = folder name; shown in notifications
+
+[zones]
+green = ["sandbox/**", "reports/**", "docs/decisions/**", ".keel/local/workflows/drafts/**"]
+red = [
+  ".env", ".env.*", "**/.env", "**/.env.*",
+  "**/*.pem", "**/*.key", "**/*.pfx", "**/*.p12", "**/id_rsa*", "**/id_ed25519*",
+  "**/credentials.json", "**/token.txt", "**/secretkeys/**",
+  "**/thong tin ca nhan/**", "**/thông tin cá nhân/**",
+]
+red_allow = ["**/.env.example", ".env.example"]
+protected = [
+  ".keel/engine/**", ".keel/keel.toml", ".keel/state/**", ".keel/local/notify.toml",
+  ".claude/settings.json", ".claude/settings.local.json", ".mcp.json",
+  ".codex/**", ".agents/hooks.json", ".cursor/hooks.json", "stop",
+]
+never_delete = ["docs/decisions/**", ".keel/state/logs/**"]
+# Writes outside the project that are allowed (agent scratch space, agent memory). Env vars and ~ are expanded.
+outside_allow = ["~/.claude/**", "$TEMP/**", "$TMP/**"]
+
+[limits]
+trash_max_files = 20
+trash_max_mb = 100
+backup_max_mb = 50
+approval_minutes = 30
+scan_max_files = 3000
+
+[sources]
+# T1 hosts the agent may fetch from without asking. Subdomains of a listed host are allowed.
+allow_hosts = [
+  "mathworks.com", "python.org", "pypi.org", "github.com",
+  "owasp.org", "nist.gov", "iso.org", "iec.ch",
+  "learn.microsoft.com", "developer.mozilla.org",
+  "code.claude.com", "docs.anthropic.com",
+]
+
+[notify]
+# Settings with secrets (ntfy topic) live in .keel/local/notify.toml, which is git-ignored.
+on = ["high"]

@@ -1,0 +1,15 @@
+Keel
+Copyright 2026 [COPYRIGHT OWNER — to be filled in by the owner before publishing]
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Acknowledgements
+----------------
+Design ideas (no code copied) from the IPLMS project (Apache-2.0):
+  - script/guard_command.py: shell splitting lessons (heredoc bodies are data; redirections are not
+    arguments — IPLMS bug-052, bug-053). Keel deliberately fails closed where IPLMS fails open.
+  - script/audit_gate.py: approval bound to the SHA-256 of the exact content.
+  - .claude/rules/supply-chain.md: package reputation / CVE report before install.
+
+Risk taxonomy cross-checked against the OWASP Top 10 for Agentic Applications (2026 edition,
+OWASP GenAI Security Project, December 2025), licensed CC BY-SA 4.0. No text reproduced.
