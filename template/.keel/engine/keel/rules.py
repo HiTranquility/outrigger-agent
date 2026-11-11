@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import packs
+from . import packs, state
 from .config import Config
 from .shell import base
 
@@ -45,7 +45,7 @@ APPS = {"start", "start-process", "saps", "explorer", "invoke-item", "ii", "code
 UPLOAD_FLAGS = {"-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "-f", "--form", "-t",
                 "--upload-file", "--post-data", "--post-file", "-body", "-infile"}
 UPLOAD_METHODS = {"post", "put", "patch", "delete"}
-KEEL_HUMAN_ONLY = re.compile(r"cli\.py\b.*\b(approve|resume|empty-trash|deny)\b", re.IGNORECASE)
+KEEL_HUMAN_ONLY = re.compile(r"cli\.py[\"']?\s+(?:-\S+\s+)*(approve|resume|empty-trash|deny|trust|untrust)\b", re.IGNORECASE)
 KEEL_SELF = re.compile(r"\.keel[\\/](engine|state|keel\.toml|local[\\/]notify\.toml)|\.claude[\\/]settings"
                        r"|\.mcp\.json|\.codex[\\/]|\.agents[\\/]hooks\.json|\.cursor[\\/]hooks\.json", re.IGNORECASE)
 PIPE_TO_SHELL = re.compile(r"(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^|\n]*\|\s*"
@@ -67,7 +67,7 @@ def check_raw(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
     if PIPE_TO_SHELL.search(command):
         out.append(Finding("high", "pipe-to-shell", "download piped straight into a shell or interpreter"))
     if KEEL_HUMAN_ONLY.search(command):
-        out.append(Finding("high", "self-approval", "approve/resume/empty-trash/deny are human-only commands"))
+        out.append(Finding("high", "self-approval", "approve/deny/resume/empty-trash/trust are human-only commands"))
     m = KEEL_SELF.search(KEEL_CLI.sub("", command))
     read_only = all(base(s[0]) in READ_ONLY for s in segments if s)
     if m and not read_only:
@@ -219,7 +219,7 @@ def _net(head: str, args: list[str], low: list[str], cfg: Config) -> Finding:
 
 def _keel_cli(args: list[str], cfg: Config, cwd: Path) -> list[Finding]:
     sub = args[1].lower() if len(args) > 1 else ""
-    if sub in {"approve", "resume", "empty-trash", "deny"}:
+    if sub in {"approve", "resume", "empty-trash", "deny", "trust", "untrust"}:
         return [Finding("high", "self-approval", f"`{sub}` is human-only")]
     if sub in {"trash", "archive"}:
         paths = [a for a in args[2:] if not a.startswith("-")]
@@ -276,7 +276,7 @@ def _pack_target(pack, seg: list[str], low: list[str], cfg: Config, cwd: Path, e
         if not a.lower().endswith(tuple(pack.scan_extensions)):
             continue
         rel = cfg.rel(a, cwd)
-        if rel is not None and rel.lower().startswith(".keel/engine/"):
+        if rel is not None and (rel.lower().startswith(".keel/engine/") or state.is_trusted(cfg, rel)):
             continue
         p = (cfg.root / rel) if rel is not None else Path(a)
         if not p.is_file():

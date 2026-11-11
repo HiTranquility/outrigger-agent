@@ -15,7 +15,7 @@ red = [
 ]
 red_allow = ["**/.env.example", ".env.example"]
 protected = [
-  ".keel/engine/**", ".keel/keel.toml", ".keel/state/**", ".keel/local/notify.toml",
+  ".keel/engine/**", ".keel/keel.toml", ".keel/KEEL.md", ".keel/rules/**", ".keel/packs/**", ".keel/state/**", ".keel/local/notify.toml",
   ".claude/settings.json", ".claude/settings.local.json", ".mcp.json",
   ".codex/**", ".agents/hooks.json", ".cursor/hooks.json", "stop",
 ]
@@ -42,3 +42,17 @@ allow_hosts = [
 [notify]
 # Settings with secrets (ntfy topic) live in .keel/local/notify.toml, which is git-ignored.
 on = ["high"]
+
+[models]
+# Tiers, not product names: models and prices change, and each vendor (Claude, Codex, Gemini...) has its own line-up.
+# The agent only SUGGESTS a tier with its options (see .keel/rules/models.md); you switch models yourself.
+strongest = "hard reasoning, long multi-step work, independent review of high-risk changes"
+balanced = "coordination, planning, coding, design, analysis, writing documents"
+fast = "work whose method is already clear: writing tests, directed bug fixes"
+cheap = "lookup, comparison, classification, summaries, reading logs"
+
+[models.names]
+# Optional: write the model you use for each tier, per vendor, so the hint can name it. Examples only - edit freely.
+# claude = { strongest = "", balanced = "", fast = "", cheap = "" }
+# codex  = { strongest = "", balanced = "", fast = "", cheap = "" }
+# gemini = { strongest = "", balanced = "", fast = "", cheap = "" }

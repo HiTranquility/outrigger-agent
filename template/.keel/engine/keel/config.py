@@ -14,7 +14,7 @@ DEFAULTS: dict = {
         "red": [".env", ".env.*", "**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.pfx",
                 "**/id_rsa*", "**/credentials.json", "**/token.txt", "**/secretkeys/**"],
         "red_allow": ["**/.env.example", ".env.example"],
-        "protected": [".keel/engine/**", ".keel/keel.toml", ".keel/state/**", ".keel/local/notify.toml",
+        "protected": [".keel/engine/**", ".keel/keel.toml", ".keel/KEEL.md", ".keel/rules/**", ".keel/packs/**", ".keel/state/**", ".keel/local/notify.toml",
                       ".claude/settings.json", ".claude/settings.local.json", ".mcp.json", "stop"],
         "never_delete": ["docs/decisions/**", ".keel/state/logs/**"],
         "outside_allow": ["~/.claude/**", "$TEMP/**", "$TMP/**"],

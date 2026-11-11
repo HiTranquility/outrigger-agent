@@ -18,6 +18,7 @@ Details for each rule live in `.keel/rules/` — read a file only when its rule 
 1. Look for a matching workflow: `.keel/local/workflows/` (the user's own, wins) then `.keel/packs/*/workflows/`.
 2. New problem or idea → propose **2–4 options** (A, B, C…) with pros/cons, **cost level** (§3) and a
    recommendation, then **wait** for the choice. Do not start building in the same message.
+   Add one `Model hint:` line (tier that fits the job — `.keel/rules/models.md`); never switch models yourself.
 3. Conflict with an accepted ADR (`docs/decisions/`) or a workflow → say so at once, propose a new ADR.
 4. No workflow fits and you have never done this → **safe probe** (`.keel/rules/safe-probe.md`).
 

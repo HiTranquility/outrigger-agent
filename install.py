@@ -5,7 +5,7 @@
 
 Never installs Python packages, never touches the network. Asks before writing anything.
 Never overwrites: .keel/local/ (your own workflows and settings), an existing .keel/keel.toml,
-an existing AGENTS.md / CLAUDE.md / GEMINI.md (it writes *.keel.md next to them and tells you).
+an existing AGENTS.md / CLAUDE.md / GEMINI.md (it keeps them and appends a short pointer block to .keel/KEEL.md).
 """
 from __future__ import annotations
 
@@ -20,6 +20,17 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 TEMPLATE = HERE / "template"
 HOOKS = HERE / "adapters" / "claude" / "settings.hooks.json"
+MARK_START, MARK_END = "<!-- keel:start -->", "<!-- keel:end -->"
+BLOCK = f"""{MARK_START}
+## ⚓ Keel guard
+
+This project is also protected by **Keel**. Read `.keel/KEEL.md` and follow it. Where Keel is stricter than the
+rules above, Keel wins; where the rules above are stricter, they win. The Keel guard hook enforces its part
+whatever this file says.
+
+@.keel/KEEL.md
+{MARK_END}
+"""
 GITIGNORE_LINES = [".keel/state/", ".keel/local/notify.toml", "STOP"]
 NOTIFY_DEFAULT = """# Keel notifications (this file is git-ignored; it may hold your ntfy topic).
 # channel = "toast"  -> Windows desktop notification (default, nothing leaves this computer)
@@ -100,13 +111,19 @@ def main() -> int:
             return 1
         plan.append(("install builder -> .keel/builder/", copy_dir(src, keel / "builder")))
 
+    plan.append(("write Keel rules to .keel/KEEL.md", lambda: shutil.copy2(TEMPLATE / "AGENTS.md", keel / "KEEL.md")))
     for fname in ("AGENTS.md", "CLAUDE.md", "GEMINI.md"):
         dst = target / fname
         if not dst.exists():
             plan.append((f"create {fname}", lambda f=fname: shutil.copy2(TEMPLATE / f, target / f)))
-        elif not a.update:
-            plan.append((f"{fname} exists -> write {fname[:-3]}.keel.md beside it (merge by hand)",
-                         lambda f=fname: shutil.copy2(TEMPLATE / f, target / f"{f[:-3]}.keel.md")))
+            continue
+        text = dst.read_text(encoding="utf-8", errors="replace")
+        if text == (TEMPLATE / fname).read_text(encoding="utf-8") or MARK_START in text:
+            continue                                   # ours already, or the pointer block is already there
+        if fname == "CLAUDE.md" and "@AGENTS.md" in text:
+            continue                                   # it imports AGENTS.md, which carries the block
+        plan.append((f"keep your {fname}; append a Keel pointer block (backup first)",
+                     lambda d=dst: append_block(d, backup)))
     for d in ("sandbox", "reports", "docs/decisions"):
         plan.append((f"ensure {d}/", lambda d=d: (target / d).mkdir(parents=True, exist_ok=True)))
     plan.append(("merge Keel hooks into .claude/settings.json (backup first)", lambda: merge_hooks(target, backup)))
@@ -126,6 +143,13 @@ def main() -> int:
     r = subprocess.run([sys.executable, "-X", "utf8", str(keel / "engine" / "cli.py"), "selftest"], cwd=target)
     print("\nNext: open .keel/local/notify.toml to set up phone notifications (ntfy), then do the LIVE CHECK above.")
     return r.returncode
+
+
+def append_block(path: Path, backup) -> None:
+    backup(path)
+    text = path.read_text(encoding="utf-8", errors="replace")
+    with path.open("a", encoding="utf-8", newline="") as fh:
+        fh.write(("" if text.endswith("\n") else "\n") + "\n" + BLOCK)
 
 
 def merge_hooks(target: Path, backup) -> None:

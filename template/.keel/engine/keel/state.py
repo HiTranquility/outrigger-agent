@@ -216,3 +216,43 @@ def empty_trash(cfg: Config, older_than_days: int) -> tuple[int, int]:
 
 def stop_file(cfg: Config) -> Path:
     return cfg.root / "STOP"
+
+
+# ---------- trusted scripts (human-only, bound to content) ----------
+
+def _trusted_file(cfg: Config) -> Path:
+    return cfg.state_dir / "trusted.json"
+
+
+def trusted(cfg: Config) -> dict:
+    f = _trusted_file(cfg)
+    try:
+        return json.loads(f.read_text(encoding="utf-8")) if f.is_file() else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _save_trusted(cfg: Config, data: dict) -> None:
+    _trusted_file(cfg).parent.mkdir(parents=True, exist_ok=True)
+    _trusted_file(cfg).write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def trust(cfg: Config, rel: str) -> str:
+    data = trusted(cfg)
+    data[rel] = _sha(cfg.root / rel)
+    _save_trusted(cfg, data)
+    return data[rel]
+
+
+def untrust(cfg: Config, rel: str) -> bool:
+    data = trusted(cfg)
+    found = data.pop(rel, None) is not None
+    _save_trusted(cfg, data)
+    return found
+
+
+def is_trusted(cfg: Config, rel: str) -> bool:
+    """True only while the file is byte-identical to what the human trusted."""
+    want = trusted(cfg).get(rel)
+    f = cfg.root / rel
+    return bool(want) and f.is_file() and _sha(f) == want

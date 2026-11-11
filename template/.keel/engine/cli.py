@@ -2,7 +2,7 @@
 """Keel command line.  python .keel/engine/cli.py <command> ...
 
 Agent may use:  status · pending · trash · trash-list · restore · archive · stop · scan · notify-test · selftest
-Human only:     approve · deny · resume · empty-trash   (the guard blocks the agent from these)
+Human only:     approve · deny · resume · empty-trash · trust · untrust   (the guard blocks the agent from these)
 """
 from __future__ import annotations
 
@@ -166,6 +166,35 @@ def cmd_scan(a) -> int:
     return 0
 
 
+def cmd_trust(a) -> int:
+    cfg = _cfg()
+    for rel in _rels(cfg, a.paths):
+        f = cfg.root / rel
+        if not f.is_file():
+            print(f"not a file: {rel}")
+            continue
+        for p in cfg.packs:
+            if f.suffix.lower() in p.scan_extensions:
+                text = f.read_text(encoding="utf-8", errors="replace")
+                for line, snippet in packs.scan_text(text, p, f.suffix.lower()):
+                    print(f"  {rel}:{line}: {snippet}")
+        if not a.yes and sys.stdin.isatty():
+            if input(f"Trust {rel} as it is now (any later change removes the trust)? [y/N] ").strip().lower() != "y":
+                continue
+        sha = state.trust(cfg, rel)
+        state.log_decision(cfg, {"tool": "cli.trust", "risk": "medium", "decision": "trusted",
+                                 "summary": f"{rel} {sha[:12]}"})
+        print(f"trusted {rel} ({sha[:12]})")
+    return 0
+
+
+def cmd_untrust(a) -> int:
+    cfg = _cfg()
+    for rel in _rels(cfg, a.paths):
+        print(("untrusted " if state.untrust(cfg, rel) else "was not trusted: ") + rel)
+    return 0
+
+
 def cmd_notify_test(a) -> int:
     cfg = _cfg()
     print(notify.send(cfg, "high", "Keel: test", f"{cfg.project_name}: notification test"))
@@ -268,6 +297,9 @@ def main() -> int:
     p = sub.add_parser("stop"); p.add_argument("reason", nargs="?", default="manual stop"); p.set_defaults(fn=cmd_stop)
     sub.add_parser("resume").set_defaults(fn=cmd_resume)
     sub.add_parser("scan").set_defaults(fn=cmd_scan)
+    p = sub.add_parser("trust"); p.add_argument("paths", nargs="+"); p.add_argument("--yes", action="store_true")
+    p.set_defaults(fn=cmd_trust)
+    p = sub.add_parser("untrust"); p.add_argument("paths", nargs="+"); p.set_defaults(fn=cmd_untrust)
     sub.add_parser("notify-test").set_defaults(fn=cmd_notify_test)
     p = sub.add_parser("selftest"); p.add_argument("-v", "--verbose", action="store_true"); p.set_defaults(fn=cmd_selftest)
     a = ap.parse_args()

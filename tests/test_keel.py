@@ -279,6 +279,76 @@ class HookProcess(Project):
         self.assertTrue(list((self.tmp / "reports" / "keel").glob("*.md")))
 
 
+class Trust(Project):
+    def test_trusted_script_runs_until_it_changes(self):
+        f = self.tmp / "script" / "tool.py"
+        f.parent.mkdir()
+        f.write_text("import subprocess\nsubprocess.run(['git', 'status'])\n", encoding="utf-8")
+        cmd = {"command": "python script/tool.py"}
+        self.assertFalse(self.d("Bash", cmd).allow)
+        state.trust(self.cfg, "script/tool.py")
+        self.assertTrue(self.d("Bash", cmd).allow)
+        f.write_text("import shutil\nshutil.rmtree('.')\n", encoding="utf-8")   # edited after trust
+        self.assertFalse(self.d("Bash", cmd).allow)
+
+    def test_agent_cannot_trust(self):
+        self.assertEqual(self.d("Bash", {"command": "python -X utf8 .keel/engine/cli.py trust script/tool.py --yes"}).risk, "high")
+        self.assertEqual(self.d("Write", {"file_path": str(self.tmp / ".keel/state/trusted.json"), "content": "{}"}).risk, "high")
+
+    def test_rules_are_protected(self):
+        for rel in (".keel/KEEL.md", ".keel/rules/gates.md", ".keel/packs/python/pack.toml"):
+            self.assertEqual(self.d("Write", {"file_path": str(self.tmp / rel), "content": ""}).risk, "high", rel)
+
+    def test_trash_reason_may_mention_trust(self):
+        (self.tmp / "a.txt").write_text("x", encoding="utf-8")
+        self.assertTrue(self.d("Bash", {"command": "python .keel/engine/cli.py trash a.txt --reason \"no longer trust it\""}).allow)
+
+
+class Install(unittest.TestCase):
+    def run_install(self, target, *extra):
+        return subprocess.run([sys.executable, "-X", "utf8", str(REPO / "install.py"), "--target", str(target), "--yes", *extra],
+                              capture_output=True, text=True, encoding="utf-8")
+
+    def test_existing_rules_are_kept_and_pointed_to_keel(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            (tmp / "AGENTS.md").write_text("# My rules\n\nNever commit to main.\n", encoding="utf-8")
+            (tmp / "CLAUDE.md").write_text("# Claude only\n\nOwn copy of the rules.\n", encoding="utf-8")
+            (tmp / ".claude").mkdir()
+            (tmp / ".claude" / "settings.json").write_text(
+                '{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "python mine.py"}]}]}}',
+                encoding="utf-8")
+            r = self.run_install(tmp)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            for name in ("AGENTS.md", "CLAUDE.md"):
+                text = (tmp / name).read_text(encoding="utf-8")
+                self.assertIn("Never commit to main." if name == "AGENTS.md" else "Own copy", text)
+                self.assertEqual(text.count("<!-- keel:start -->"), 1)
+                self.assertIn("@.keel/KEEL.md", text)
+            self.assertTrue((tmp / ".keel" / "KEEL.md").is_file())
+            hooks = json.loads((tmp / ".claude" / "settings.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
+            self.assertEqual(len(hooks), 2)                       # theirs kept, ours added
+            self.assertTrue(list((tmp / ".keel" / "state" / "backups").glob("install-*/AGENTS.md")))
+            (tmp / ".keel" / "local" / "workflows" / "mine.md").write_text("keep me", encoding="utf-8")
+            self.assertEqual(self.run_install(tmp, "--update").returncode, 0)
+            self.assertEqual((tmp / "AGENTS.md").read_text(encoding="utf-8").count("<!-- keel:start -->"), 1)
+            self.assertEqual(len(json.loads((tmp / ".claude" / "settings.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"]), 2)
+            self.assertEqual((tmp / ".keel" / "local" / "workflows" / "mine.md").read_text(encoding="utf-8"), "keep me")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_claude_md_importing_agents_is_left_alone(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            (tmp / "AGENTS.md").write_text("# Rules\n", encoding="utf-8")
+            (tmp / "CLAUDE.md").write_text("@AGENTS.md\n\nClaude notes.\n", encoding="utf-8")
+            self.assertEqual(self.run_install(tmp).returncode, 0)
+            self.assertNotIn("keel:start", (tmp / "CLAUDE.md").read_text(encoding="utf-8"))
+            self.assertIn("keel:start", (tmp / "AGENTS.md").read_text(encoding="utf-8"))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 class RegisterIntegrity(unittest.TestCase):
     """docs/RISK_REGISTER.md must not name tests that do not exist, and every guard row must name one."""
 

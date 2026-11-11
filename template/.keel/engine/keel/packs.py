@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from . import state
 from .config import Config, Pack
 
 SKIP_DIRS = {".git", ".keel", "node_modules", ".venv", "venv", "__pycache__", "archive"}
@@ -38,6 +39,8 @@ def scan_project(cfg: Config, pack: Pack) -> list[str]:
     found: list[str] = []
     budget = cfg.limit("scan_max_files")
     for path in _walk(cfg.root, pack.scan_extensions):
+        if state.is_trusted(cfg, path.relative_to(cfg.root).as_posix()):
+            continue
         budget -= 1
         if budget < 0:
             found.append(f"(scan stopped after {cfg.limit('scan_max_files')} files — raise limits.scan_max_files)")
