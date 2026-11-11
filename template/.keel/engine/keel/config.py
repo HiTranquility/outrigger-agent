@@ -18,6 +18,10 @@ DEFAULTS: dict = {
                       ".claude/settings.json", ".claude/settings.local.json", ".mcp.json", "stop"],
         "never_delete": ["docs/decisions/**", ".keel/state/logs/**"],
         "outside_allow": ["~/.claude/**", "$TEMP/**", "$TMP/**"],
+        "memory": ["~/.claude/projects/**/memory/**", "~/.codex/memories/**", "~/.gemini/memory/**"],
+        "agent_config": ["~/.claude/CLAUDE.md", "~/.claude/settings.json", "~/.claude/settings.local.json",
+                         "~/.claude/skills/**", "~/.claude/agents/**", "~/.claude/commands/**", "~/.claude/rules/**",
+                         "~/.claude.json", "~/.codex/**", "~/.gemini/**", "~/.cursor/**", "~/.agents/**"],
     },
     "limits": {"trash_max_files": 20, "trash_max_mb": 100, "backup_max_mb": 50,
                "approval_minutes": 30, "scan_max_files": 3000},
@@ -79,16 +83,22 @@ class Config:
             return "green"
         return "yellow"
 
-    def outside_allowed(self, path: str | Path) -> bool:
+    def outside_kind(self, path: str | Path) -> str | None:
+        """For a path outside the project: 'memory', 'agent-config', 'allow' or None (not allowed)."""
         p = Path(os.path.expandvars(os.path.expanduser(str(path)))).resolve(strict=False).as_posix().lower()
-        for pat in self.section("zones").get("outside_allow", []):
-            expanded = os.path.expandvars(os.path.expanduser(pat))
-            if "$" in expanded:  # unset variable: never match
-                continue
-            base = Path(expanded.replace("/**", "").replace("\\**", "")).resolve(strict=False).as_posix().lower()
-            if p == base or p.startswith(base.rstrip("/") + "/"):
-                return True
-        return False
+        zones = self.section("zones")
+        for kind, key in (("memory", "memory"), ("agent-config", "agent_config"), ("allow", "outside_allow")):
+            for pat in zones.get(key, []):
+                expanded = os.path.expandvars(os.path.expanduser(pat))
+                if "$" in expanded:  # unset variable: never match
+                    continue
+                glob = Path(expanded.replace("**", "\x00")).resolve(strict=False).as_posix().lower().replace("\x00", "**")
+                if fnmatch.fnmatchcase(p, glob) or (glob.endswith("/**") and p == glob[:-3]):
+                    return kind
+        return None
+
+    def outside_allowed(self, path: str | Path) -> bool:
+        return self.outside_kind(path) in {"allow", "memory"}
 
     def host_allowed(self, host: str) -> bool:
         host = host.lower().strip(".")

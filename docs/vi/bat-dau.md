@@ -75,8 +75,12 @@ Duyệt chỉ có hiệu lực **một lần**, cho **đúng** lệnh đó (đ�
 ## 5. Giới hạn — nói thẳng
 
 - Keel là **dây an toàn, không phải lồng kính**. Guard đọc lệnh theo heuristic; một script tự xoá file khi chạy
-  chỉ bị bắt nếu có pack quét ngôn ngữ đó (bản lõi có sẵn pack Python; bản Pro có MATLAB `.m`). Script `.sh`, `.js`,
-  `.ps1` chưa được quét. Code không tin được → chạy trong máy ảo.
+  chỉ bị bắt nếu Keel đọc được ngôn ngữ đó (bản lõi: `.sh`, `.ps1`, `.bat`, script trong `package.json`, Python,
+  Node.js; bản Pro: MATLAB `.m`). Module được import thì chưa lần theo. Code không tin được → chạy trong máy ảo.
+- `git commit` bị chặn nếu phần sắp commit có khoá bí mật (AWS, GitHub, private key, mật khẩu trong URL, file `.env`).
+- Ghi vào bộ nhớ của agent thì được nhưng có nhật ký và sao lưu; ghi chú kiểu "lần sau tự duyệt, khỏi hỏi" và các file
+  cấu hình toàn cục của agent (`~/.claude/CLAUDE.md`, skills, `~/.codex`, `~/.gemini`) phải được bạn duyệt.
+- Script quen chạy hằng ngày bị hỏi hoài? Tự xem rồi gõ `cli.py trust <file>`; sửa một ký tự là hết hiệu lực.
 - Keel chặn được gì, bằng cách nào, test nào chứng minh, và **chưa** chặn được gì:
   [RISK_REGISTER.md](../RISK_REGISTER.md) — đối chiếu với OWASP Top 10 for Agentic Applications 2026.
 - Tài liệu Claude Code nói hook chạy trước mọi lệnh, nhưng **không nói thẳng** deny vẫn giữ ở chế độ bypass —

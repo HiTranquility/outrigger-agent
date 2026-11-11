@@ -124,12 +124,14 @@ def pending(cfg: Config) -> list[dict]:
 # ---------- backups ----------
 
 def backup(cfg: Config, rel: str) -> str | None:
-    src = cfg.root / rel
+    """Copy a file to .keel/state/backups before it is changed. `rel` may be absolute (agent memory outside the project)."""
+    src = cfg.root / rel            # an absolute `rel` replaces the root
     if not src.is_file():
         return None
     if src.stat().st_size > cfg.limit("backup_max_mb") * 1024 * 1024:
         return "skipped: larger than backup_max_mb"
-    dest = cfg.state_dir / "backups" / f"{now():%Y-%m-%d}" / f"{rel}@{now():%H%M%S}"
+    name = f"_outside/{src.parent.name}/{src.name}" if Path(rel).is_absolute() else rel
+    dest = cfg.state_dir / "backups" / f"{now():%Y-%m-%d}" / f"{name}@{now():%H%M%S}"
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dest)
     return dest.relative_to(cfg.root).as_posix()

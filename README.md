@@ -64,7 +64,8 @@ your-project/
 ## Honest limits
 
 - Keel is a **seatbelt, not a sandbox**. It reads commands heuristically; a script that deletes files when run is
-  only caught if a pack scans that language (core: Python scripts; Pro: MATLAB `.m`). Run untrusted code in a VM.
+  only caught if Keel can read that language (core: shell, PowerShell, batch, `package.json` scripts, Python, Node.js;
+  Pro: MATLAB `.m`). Imported modules are not followed. Run untrusted code in a VM.
 - What is covered, how, which test proves it, and what is not covered: [docs/RISK_REGISTER.md](docs/RISK_REGISTER.md)
   (mapped to the OWASP Top 10 for Agentic Applications 2026).
 - Claude Code docs say hooks run before every tool call; that a deny holds in `bypassPermissions` is implied, not

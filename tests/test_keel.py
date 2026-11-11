@@ -357,7 +357,9 @@ class RegisterIntegrity(unittest.TestCase):
         text = (REPO / "docs" / "RISK_REGISTER.md").read_text(encoding="utf-8")
         named = set(re.findall(r"`([A-Z]\w+)\.(test_\w+)`", text))
         self.assertTrue(named)
-        missing = [f"{c}.{t}" for c, t in named if not hasattr(globals().get(c), t)]
+        import test_group1
+        classes = {**globals(), **vars(test_group1)}
+        missing = [f"{c}.{t}" for c, t in named if not hasattr(classes.get(c), t)]
         self.assertEqual(missing, [])
 
     def test_every_guard_row_has_a_test(self):

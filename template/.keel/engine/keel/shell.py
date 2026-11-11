@@ -12,7 +12,8 @@ import shlex
 SEPARATORS = {"&&", "||", ";", "|", "&", "\n", ";;", "|&"}
 WRAPPERS = {"bash", "sh", "zsh", "dash", "cmd", "powershell", "pwsh"}
 WRAPPER_FLAGS = {"-c", "/c", "/k", "-command", "-c:", "-commandwithargs"}
-PREFIXES = {"sudo", "env", "nohup", "time", "exec", "command", "builtin", "nice", "xargs", "call", "&", "."}
+PREFIXES = {"sudo", "env", "nohup", "time", "exec", "command", "builtin", "nice", "xargs", "call", "&", ".",
+            "if", "then", "else", "elif", "do", "while", "until", "!", "{", "source"}
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 SUBST = re.compile(r"\$\(([^()]*(?:\([^()]*\)[^()]*)*)\)|`([^`]*)`")
 REDIRECT = re.compile(r"^\d*(>>?|<|>&|&>)(.*)$")

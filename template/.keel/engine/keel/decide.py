@@ -1,6 +1,7 @@
 """Platform-agnostic decision: (tool name, tool input, cwd) -> allow or deny, with side effects listed."""
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,6 +23,11 @@ SCHEDULE_TOOLS = re.compile(r"cron(create|delete|update)?$|remotetrigger|schedul
                             re.IGNORECASE)
 RISKY_MCP = re.compile(r"(delete|remove|kill|terminate|move|write|edit|create|start|execute|run|install|send|post|"
                        r"publish|push|upload|schedule|trigger|merge|open_application|type|click|drag)", re.IGNORECASE)
+MEMORY_SUSPICIOUS = re.compile(
+    r"ignore (all |any )?(previous|prior|above|earlier) (instructions|rules)|always approve|approve (it |them )?automatically"
+    r"|without asking( the user)?|skip (the )?(gate|approval|confirmation)s?|(disable|turn off|remove|uninstall) (keel|the guard|hooks?)"
+    r"|bypass (keel|the guard|approval)|cli\.py\s+(approve|trust|resume)|do not (tell|inform|mention to) the user"
+    r"|bỏ qua (luật|quy tắc|guard|keel)|không cần hỏi|tự (động )?duyệt|tắt (keel|guard|hook)", re.IGNORECASE)
 APP_MCP = re.compile(r"open_application|request_access|preview_start|navigate", re.IGNORECASE)
 
 
@@ -69,7 +75,19 @@ def _write_findings(cfg: Config, tool: str, tool_input: dict, cwd: Path) -> tupl
     for p in _paths_from(tool_input):
         rel = cfg.rel(p, cwd)
         if rel is None:
-            if not cfg.outside_allowed(p):
+            kind = cfg.outside_kind(p)
+            if kind == "agent-config":
+                findings.append(Finding("medium", "agent-config",
+                                        f"`{p}` changes how agents behave in every project — only with your approval"))
+            elif kind == "memory":
+                findings.append(Finding("low", "memory-write", f"agent memory written: {Path(p).name}"))
+                to_backup.append(str(Path(os.path.expanduser(p)).resolve(strict=False)))
+                text = " ".join(str(tool_input.get(k, "")) for k in ("content", "new_string", "new_source"))
+                m = MEMORY_SUSPICIOUS.search(text)
+                if m:
+                    findings.append(Finding("medium", "memory-suspicious",
+                                            f"the memory note contains an instruction that weakens safety: “{m.group(0)[:50]}”"))
+            elif kind != "allow":
                 findings.append(Finding("medium", "write-outside", f"writes outside the project: {p}"))
             continue
         zone = cfg.zone_of(rel)

@@ -233,10 +233,13 @@ CASES = [
     ("CronCreate", {"schedule": "0 * * * *", "prompt": "x"}, False, "high"),
     ("Bash", {"command": "start notepad"}, False, "medium"),
     ("Bash", {"command": "python -m pytest -q"}, True, "low"),
+    ("Bash", {"command": "if true; then git push --force; fi"}, False, "high"),
+    ("Bash", {"command": "npm ci"}, True, "low"),
     ("Bash", {"command": "python -X utf8 .keel/engine/cli.py scan"}, True, "low"),
 ]
 PACK_CASES = {  # only checked when the pack is installed
     "python": [("Bash", {"command": "python -c \"import subprocess; subprocess.run(['x'])\""}, False, "medium")],
+    "node": [("Bash", {"command": "node -e \"require('child_process').exec('x')\""}, False, "medium")],
 }
 
 
