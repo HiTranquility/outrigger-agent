@@ -122,7 +122,7 @@ def main() -> int:
             continue                                   # ours already, or the pointer block is already there
         if fname == "CLAUDE.md" and "@AGENTS.md" in text:
             continue                                   # it imports AGENTS.md, which carries the block
-        plan.append((f"keep your {fname}; append a Outrigger pointer block (backup first)",
+        plan.append((f"keep your {fname}; append an Outrigger pointer block (backup first)",
                      lambda d=dst: append_block(d, backup)))
     for d in ("sandbox", "reports", "docs/decisions"):
         plan.append((f"ensure {d}/", lambda d=d: (target / d).mkdir(parents=True, exist_ok=True)))
