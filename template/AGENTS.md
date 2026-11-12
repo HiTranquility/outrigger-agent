@@ -59,6 +59,8 @@ Installing any package/extension/MCP/skill = L3: name, version, why, reputation,
 
 - End each work turn with a report from `.keel/templates/REPORT.md` in `reports/YYYY-MM-DD/`:
   result · what ran · evidence · bugs · open questions · next steps · **what was not done or not verified**.
+- A request bigger than a quick fix starts with a REQ (verbatim request + 3–5 "done means" criteria); a session
+  that ends unfinished leaves a HANDOFF; a loss or near miss gets a POSTMORTEM. Templates and paths: `.keel/rules/records.md`.
 - A decision with alternatives (including the user's choice at a GATE) → `docs/decisions/ADR-NNNN-*.md`
   from `.keel/templates/ADR.md`, written **in the same turn** the user decides.
 - A workflow you draft goes to `.keel/local/workflows/drafts/` with `status: draft`; only the user promotes it.

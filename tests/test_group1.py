@@ -181,5 +181,21 @@ class AgentMemoryAndConfig(Project):
         self.assertTrue(self.d("Write", {"file_path": str(self.home / ".claude" / "plans" / "p.md"), "content": "x"}).allow)
 
 
+class Templates(Project):
+    TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "template" / ".keel"
+
+    def test_every_template_is_routed_in_records_rule(self):
+        records = (self.TEMPLATE_DIR / "rules" / "records.md").read_text(encoding="utf-8")
+        names = sorted(p.name for p in (self.TEMPLATE_DIR / "templates").glob("*.md"))
+        self.assertGreaterEqual(len(names), 12)
+        self.assertEqual([n for n in names if f"`{n}`" not in records], [])
+
+    def test_record_folders_are_green_and_postmortems_kept(self):
+        for rel in ("docs/requirements/REQ-001-x.md", "docs/postmortems/PM-001-x.md", "docs/meetings/2026-11-12-x.md",
+                    "docs/RISK.md", "reports/status/2026-11-12.md"):
+            self.assertEqual(self.cfg.zone_of(rel), "green", rel)
+        self.assertEqual(self.d("Bash", {"command": "rm docs/postmortems/PM-001-x.md"}).risk, "high")
+
+
 if __name__ == "__main__":
     unittest.main()

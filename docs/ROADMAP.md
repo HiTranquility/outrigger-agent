@@ -28,5 +28,18 @@ rule) · fixed report order and "not done / not verified" (IPLMS REQ-007) · dec
 | 11 | **Git policy pack**: one record one branch, never commit to main, delete merged branches only on approval | IPLMS ADR-0043/0053 | Teams | M |
 | 12 | **Native approval prompt** — try Claude Code `permissionDecision: "ask"` for medium risk if it still prompts under bypass (live test needed) | own analysis | Less typing for the user | S (test first) |
 
+## Packs proposed 2026-11-12 — owner said "later" (not started)
+
+| Pack | Workflows sketched |
+| :-- | :-- |
+| `packs/business` | BIZ-01 business problem one-pager · BIZ-02 option / competitor comparison · BIZ-03 proposal · BIZ-04 SOP · BIZ-05 customer interview |
+| `packs/legal` | LEG-01 contract reading + questions for a lawyer · LEG-02 software licence inventory · LEG-03 personal-data inventory · LEG-04 compliance register · LEG-05 content provenance log |
+| `packs/finance` | FIN-01 cost estimate (three points) · FIN-02 break-even · FIN-03 cloud cost forecast · FIN-04 project cost ledger · FIN-05 pricing model comparison |
+| `packs/strategy` (owner's idea) | strategic-management workflows built on named consulting frameworks (the owner mentioned McKinsey-style models); each framework must be checked against its original source before it is written in (rule S2) |
+
+Rules fixed for the legal and finance packs: every number has a source and a formula; outputs are "draft — needs a
+professional"; laws are cited with number and effective date from the official text; the agent never concludes
+"legal", "sign it" or "invest".
+
 ## Release 2 (decided, ADR-0005)
 Research (NCKH) pack `RES-01…08` · Codex / Antigravity / Cursor adapters · output filter (#2).
