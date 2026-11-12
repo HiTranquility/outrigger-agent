@@ -4,31 +4,53 @@
 *Cho AI agent chạy hết tốc lực mà không lật thuyền.* · [Tiếng Việt](docs/vi/bat-dau.md)
 
 A keel is what lets a sailboat carry full sail in strong wind and stay upright.
-Keel does the same for coding agents (Claude Code today; Codex, Antigravity, Cursor next) that people run with
-**bypass all permissions**:
+Keel does the same for AI coding agents that people run with **bypass all permissions**: the agent keeps its
+speed, and the human keeps the helm.
 
-| You get | How |
-| :-- | :-- |
-| 🛑 Dangerous actions are **blocked, not just discouraged** | a fail-closed guard hook checks every tool call: recursive deletes, `git push --force`, registry/firewall, download-into-shell, uploads, secret files, schedules, edits to Keel itself |
-| 📱 You are told | high-risk blocks send a Windows notification or a phone push (ntfy) — only risk, project and an id, never your data |
-| ✋ You decide at every turning point | the agent must offer 2–4 options with a **cost level** (L0 read → L1 headless → L2 open app → L3 network/install) and wait; blocked actions need *your* approval from *your* terminal |
-| 🗑️ Nothing is lost | "delete" = restorable trash with SHA-256 manifest; edits outside the sandbox are backed up first; ADRs are never deleted |
-| 📝 Every turn leaves a trail | report template, ADR for every decision, machine log of every block and every app opened |
-| 🧭 Your own workflows | packs (MATLAB first) and an interview that builds workflows for *your* work; updates never overwrite them |
+> **Status: 0.2.0, early.** Enforcement works on Claude Code today. Codex, Antigravity/Gemini and Cursor read the
+> rules but are not yet enforced by a hook (adapters planned). Read [Honest limits](#honest-limits) before relying on it.
+
+## What it does
+
+| | What you get | How |
+| :-: | :-- | :-- |
+| 🛑 | Dangerous actions are **blocked, not just discouraged** | A fail-closed hook judges every tool call: recursive deletes, `git push --force`, `git reset --hard`, registry and firewall changes, download-into-shell, uploads, secret files, schedules, edits to the guard itself |
+| 📜 | Scripts are judged like typed commands | `.sh` `.ps1` `.bat` files, `package.json` scripts, Python and Node.js files are read **before** they run |
+| 🔑 | Secrets stay out of git | `git commit` is checked against the staged diff (AWS, GitHub, private keys, passwords in URLs, `.env`); the value is never printed |
+| ✋ | You decide at every turning point | The agent offers 2–4 options with a **cost level** and waits. A blocked action gets an id; only *you* can approve it, from *your* terminal, once, for that exact input (SHA-256) |
+| 💸 | No surprise costs | Cost = permission levels: **L0** read → **L1** headless run → **L2** open an app → **L3** network / install / schedule. Cheapest level first |
+| 🗑️ | Nothing is lost | "Delete" is a restorable trash with a SHA-256 manifest; files outside the sandbox are backed up before every edit; ADRs and postmortems are never deleted |
+| 📝 | Every turn leaves a trail | 12 record templates (request, gate, report, ADR, hand-off, postmortem, risk…), a machine log of every block, approval and app launch |
+| 🧠 | Agent memory is watched | Memory writes are logged and backed up; a note like "approve automatically next time" needs your approval, and so do global agent config files |
+| 📱 | You are told | High-risk blocks send a desktop notification or a phone push (ntfy) carrying only risk, project and id — never your data |
+| 🧭 | It grows with you | Packs describe a piece of software to the guard (Python and Node.js ship in the core); your own workflows live in `.keel/local/` and are never overwritten by updates |
 
 ## Install (2 minutes)
 
-Requires Python 3.11+ (Keel never installs anything for you).
+Requires **Python 3.11+** and git. Keel uses the standard library only and never installs anything for you.
 
 ```bash
-python install.py --target "C:/path/to/your/project" --dry
+git clone https://github.com/<you>/<repo>.git
 ```
 
 ```bash
-python install.py --target "C:/path/to/your/project"
+python <repo>/install.py --target "C:/path/to/your/project" --dry
 ```
 
-Then do the **live check** printed at the end (ask the agent to `rm -rf sandbox/keel-live-check` in bypass mode — you must see `KEEL BLOCKED`).
+```bash
+python <repo>/install.py --target "C:/path/to/your/project"
+```
+
+The installer shows its plan and asks before writing. It **keeps your existing** `AGENTS.md` / `CLAUDE.md` /
+`GEMINI.md` (it appends one marked pointer block) and your existing hooks.
+
+**Then do the live check** — the one thing only you can verify: start your agent in bypass mode in that project and ask it to run
+
+```text
+rm -rf sandbox/keel-live-check
+```
+
+You must see `KEEL BLOCKED`. If the command runs, Keel is not protecting you — stop and open an issue.
 
 ## When the guard blocks something
 
@@ -37,45 +59,73 @@ KEEL BLOCKED [HIGH] K-3f9a1c2e
 - git-force: force/delete push rewrites shared history
 ```
 
-Read the agent's GATE question. If you agree, run in **your own** terminal:
+The agent must stop and show you a GATE (what · why · risk · cost · options · rollback). If you agree, in **your own** terminal:
 
 ```bash
 python .keel/engine/cli.py approve K-3f9a1c2e
 ```
 
-The approval is bound to that exact action (SHA-256), used once, expires in 30 minutes. The agent cannot approve itself.
+| Command | Who | What |
+| :-- | :-: | :-- |
+| `status` · `pending` · `scan` | anyone | state, waiting approvals, dangerous calls in pack files |
+| `approve K-…` · `deny K-…` | **you only** | one use, exact input, 30 minutes |
+| `trash <path> --reason "…"` · `restore <id>` · `archive <path>` | anyone | soft delete, undo, long-term archive |
+| `trust <file>` · `untrust <file>` | **you only** | stop asking about a script you reviewed — until one byte of it changes |
+| `stop "reason"` / `resume` | anyone / **you only** | emergency brake: block every write |
+| `empty-trash` | **you only** | hard delete, typed confirmation |
+| `selftest` · `notify-test` | anyone | check the rules and your notification channel |
 
-## Layout after install
+## What gets installed
 
 ```
 your-project/
-├── AGENTS.md  CLAUDE.md  GEMINI.md     ← rules (one source: AGENTS.md)
+├── AGENTS.md  CLAUDE.md  GEMINI.md     ← your rules, plus one pointer block
 ├── sandbox/  reports/  docs/decisions/  ← green zone: experiments, reports, ADRs
-├── STOP                                  ← (only when you pull the brake)
 └── .keel/
-    ├── rules/  templates/                ← details the agent reads on demand
-    ├── engine/                           ← the guard (Python, stdlib only)
-    ├── keel.toml                         ← zones, limits, trusted hosts — you edit, the agent cannot
-    ├── packs/<software>/                 ← Keel Pro packs (MATLAB, …)
-    ├── local/                            ← YOUR workflows and settings — updates never touch it
-    └── state/                            ← logs, approvals, backups, trash (git-ignored)
+    ├── KEEL.md  rules/  templates/      ← the rules the agent reads (protected from the agent)
+    ├── engine/                          ← the guard: Python, stdlib only, fail-closed
+    ├── keel.toml                        ← zones, limits, trusted hosts, model tiers — you edit, the agent cannot
+    ├── packs/<software>/                ← what the guard knows about a tool (python, node, …)
+    ├── local/                           ← YOUR workflows and settings — updates never touch it
+    └── state/                           ← logs, approvals, backups, trash (git-ignored)
 ```
 
 ## Honest limits
 
-- Keel is a **seatbelt, not a sandbox**. It reads commands heuristically; a script that deletes files when run is
-  only caught if Keel can read that language (core: shell, PowerShell, batch, `package.json` scripts, Python, Node.js;
-  Pro: MATLAB `.m`). Imported modules are not followed. Run untrusted code in a VM.
-- What is covered, how, which test proves it, and what is not covered: [docs/RISK_REGISTER.md](docs/RISK_REGISTER.md)
-  (mapped to the OWASP Top 10 for Agentic Applications 2026).
-- Claude Code docs say hooks run before every tool call; that a deny holds in `bypassPermissions` is implied, not
-  stated — hence the live check.
+- **A seatbelt, not a sandbox.** Commands are read heuristically. Code is checked only in languages Keel can read
+  (shell, PowerShell, batch, `package.json` scripts, Python, Node.js; MATLAB in Keel Pro); imported modules are
+  not followed. Run untrusted code in a VM.
+- **One platform enforced so far.** Claude Code. The others get the rules as text only.
+- **The bypass guarantee is yours to confirm.** Claude Code's docs say hooks run before every tool call; that a deny
+  holds under `bypassPermissions` is implied, not stated — hence the live check.
+- **False alarms cost one approval; that is the trade.** The guard fails closed: when it cannot parse something, it asks.
+
+What is covered, how, which test proves it, and what is not: **[docs/RISK_REGISTER.md](docs/RISK_REGISTER.md)**
+— 19 risks traced loss → unsafe action → rule → gate → test, mapped to the OWASP Top 10 for Agentic Applications (2026).
+
+## Documentation
+
+| | |
+| :-- | :-- |
+| [Getting started](docs/en/getting-started.md) · [Bắt đầu (Tiếng Việt)](docs/vi/bat-dau.md) | install, notifications, approvals |
+| [Risk register](docs/RISK_REGISTER.md) | coverage, evidence, known gaps |
+| [Design spec](docs/specs/2026-11-11-keel-design.md) · [Decisions (ADR)](docs/adr/README.md) | why it is built this way |
+| [Roadmap](docs/ROADMAP.md) | what is next |
+
+## Development
+
+```bash
+python -X utf8 -m unittest discover -s tests
+```
+
+72 tests. Every guard rule needs a test, and a row in the risk register that names it — a test fails if the register
+names a test that does not exist.
 
 ## Keel Pro
 
-Software packs (MATLAB: 7 workflows from intake to report, code scanner, demo project), the workflow-builder
-interview and updates. Research (NCKH) pack and Codex/Antigravity/Cursor adapters in release 2.
+Paid add-ons in a private repository: software packs (MATLAB first: seven workflows from intake to report, a `.m`
+code scanner, a demo project) and an interview that turns your own way of working into workflows.
 
 ## Licence
 
-Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Design decisions: [docs/adr](docs/adr/README.md).
+Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
