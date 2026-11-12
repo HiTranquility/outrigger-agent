@@ -1,11 +1,11 @@
-# ⚓ Keel — Bắt đầu
+# 🛶 Outrigger — Bắt đầu
 
-> **Keel** (sống thuyền) là bộ phận giúp thuyền căng hết buồm mà không lật.
-> Bộ kit này làm đúng việc đó cho AI agent: bạn cho nó **toàn quyền** để làm nhanh, còn Keel giữ cho nó **không lật**.
+> **Outrigger** là cái phao gắn bên hông xuồng: nhờ nó chiếc xuồng hẹp chạy nhanh ngoài biển mà không lật.
+> Bộ kit này làm đúng việc đó cho AI agent: bạn cho nó **toàn quyền** để làm nhanh, còn Outrigger giữ cho nó **không lật**.
 
-## 1. Keel làm gì cho bạn
+## 1. Outrigger làm gì cho bạn
 
-| Nỗi lo | Keel xử lý thế nào |
+| Nỗi lo | Outrigger xử lý thế nào |
 | :-- | :-- |
 | AI xoá nhầm, `git push --force`, sửa registry, tắt tường lửa | **Guard chặn thật** (hook chạy trước mỗi lệnh), không phải chỉ dặn trong file `.md` |
 | Không có ai ngồi canh | Rủi ro cao → **thông báo Windows hoặc điện thoại** (ntfy). Tin báo chỉ có mức rủi ro, tên dự án, mã — không chứa code hay dữ liệu |
@@ -17,30 +17,30 @@
 
 ## 2. Cài đặt
 
-Cần Python 3.11 trở lên. Keel **không tự cài gì** cho bạn.
+Cần Python 3.11 trở lên. Outrigger **không tự cài gì** cho bạn.
 
 ```bash
 python install.py --target "C:/duong/dan/du-an" --dry
 ```
 
 ```bash
-python install.py --target "C:/duong/dan/du-an" --pack "C:/duong/dan/keel-agent-pro/packs/matlab"
+python install.py --target "C:/duong/dan/du-an" --pack "C:/duong/dan/outrigger-agent-pro/packs/matlab"
 ```
 
 Cuối cùng làm **bài kiểm tra sống** mà trình cài in ra: bật agent ở chế độ bypass, bảo nó chạy
-`rm -rf sandbox/keel-live-check`. Phải thấy `KEEL BLOCKED`. Không thấy → Keel **chưa** bảo vệ bạn, dừng lại.
+`rm -rf sandbox/outrigger-live-check`. Phải thấy `OUTRIGGER BLOCKED`. Không thấy → Outrigger **chưa** bảo vệ bạn, dừng lại.
 
 ## 3. Bật thông báo điện thoại (ntfy)
 
-1. Cài app **ntfy** trên điện thoại, bấm *Subscribe*, đặt một tên kênh dài và khó đoán (ví dụ `keel-7f3k9q2m8x`).
-2. Mở `.keel/local/notify.toml` (file này không bị đưa lên git), sửa:
+1. Cài app **ntfy** trên điện thoại, bấm *Subscribe*, đặt một tên kênh dài và khó đoán (ví dụ `outrigger-7f3k9q2m8x`).
+2. Mở `.outrigger/local/notify.toml` (file này không bị đưa lên git), sửa:
    ```toml
    channel = "ntfy"
    [ntfy]
    server = "https://ntfy.sh"
-   topic = "keel-7f3k9q2m8x"
+   topic = "outrigger-7f3k9q2m8x"
    ```
-3. Thử: `python .keel/engine/cli.py notify-test`
+3. Thử: `python .outrigger/engine/cli.py notify-test`
 
 > Tên kênh ntfy công khai ai đoán được thì người đó đọc được tin báo — vì vậy tin báo **không bao giờ** chứa dữ liệu.
 > Muốn kín hoàn toàn: tự dựng máy chủ ntfy, hoặc giữ `channel = "toast"` (chỉ báo trên máy Windows).
@@ -48,14 +48,14 @@ Cuối cùng làm **bài kiểm tra sống** mà trình cài in ra: bật agent 
 ## 4. Khi guard chặn
 
 ```text
-KEEL BLOCKED [HIGH] K-3f9a1c2e
+OUTRIGGER BLOCKED [HIGH] OR-3f9a1c2e
 - git-force: force/delete push rewrites shared history
 ```
 
 AI sẽ gửi bạn phiếu GATE. Đồng ý thì gõ **trong terminal của bạn**:
 
 ```bash
-python .keel/engine/cli.py approve K-3f9a1c2e
+python .outrigger/engine/cli.py approve OR-3f9a1c2e
 ```
 
 Duyệt chỉ có hiệu lực **một lần**, cho **đúng** lệnh đó (đổi một ký tự là phải duyệt lại), trong 30 phút.
@@ -64,7 +64,7 @@ Duyệt chỉ có hiệu lực **một lần**, cho **đúng** lệnh đó (đ�
 | :-- | :-- | :-- |
 | `cli.py status` | ai cũng được | trạng thái, số việc chờ duyệt, dung lượng thùng rác |
 | `cli.py pending` | ai cũng được | xem các việc đang chờ duyệt |
-| `cli.py approve K-…` / `deny K-…` | **chỉ bạn** | duyệt / từ chối |
+| `cli.py approve OR-…` / `deny OR-…` | **chỉ bạn** | duyệt / từ chối |
 | `cli.py trash <file> --reason "…"` | AI và bạn | xoá mềm |
 | `cli.py restore <mã>` | AI và bạn | khôi phục |
 | `cli.py archive <file> --reason "…"` | AI và bạn | lưu trữ vào `archive/` |
@@ -74,14 +74,14 @@ Duyệt chỉ có hiệu lực **một lần**, cho **đúng** lệnh đó (đ�
 
 ## 5. Giới hạn — nói thẳng
 
-- Keel là **dây an toàn, không phải lồng kính**. Guard đọc lệnh theo heuristic; một script tự xoá file khi chạy
-  chỉ bị bắt nếu Keel đọc được ngôn ngữ đó (bản lõi: `.sh`, `.ps1`, `.bat`, script trong `package.json`, Python,
+- Outrigger là **dây an toàn, không phải lồng kính**. Guard đọc lệnh theo heuristic; một script tự xoá file khi chạy
+  chỉ bị bắt nếu Outrigger đọc được ngôn ngữ đó (bản lõi: `.sh`, `.ps1`, `.bat`, script trong `package.json`, Python,
   Node.js; bản Pro: MATLAB `.m`). Module được import thì chưa lần theo. Code không tin được → chạy trong máy ảo.
 - `git commit` bị chặn nếu phần sắp commit có khoá bí mật (AWS, GitHub, private key, mật khẩu trong URL, file `.env`).
 - Ghi vào bộ nhớ của agent thì được nhưng có nhật ký và sao lưu; ghi chú kiểu "lần sau tự duyệt, khỏi hỏi" và các file
   cấu hình toàn cục của agent (`~/.claude/CLAUDE.md`, skills, `~/.codex`, `~/.gemini`) phải được bạn duyệt.
 - Script quen chạy hằng ngày bị hỏi hoài? Tự xem rồi gõ `cli.py trust <file>`; sửa một ký tự là hết hiệu lực.
-- Keel chặn được gì, bằng cách nào, test nào chứng minh, và **chưa** chặn được gì:
+- Outrigger chặn được gì, bằng cách nào, test nào chứng minh, và **chưa** chặn được gì:
   [RISK_REGISTER.md](../RISK_REGISTER.md) — đối chiếu với OWASP Top 10 for Agentic Applications 2026.
 - Tài liệu Claude Code nói hook chạy trước mọi lệnh, nhưng **không nói thẳng** deny vẫn giữ ở chế độ bypass —
   nên bắt buộc làm bài kiểm tra sống ở bước 2.

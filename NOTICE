@@ -1,4 +1,4 @@
-Keel
+Outrigger
 Copyright 2026 [COPYRIGHT OWNER — to be filled in by the owner before publishing]
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
@@ -7,7 +7,7 @@ Acknowledgements
 ----------------
 Design ideas (no code copied) from the IPLMS project (Apache-2.0):
   - script/guard_command.py: shell splitting lessons (heredoc bodies are data; redirections are not
-    arguments — IPLMS bug-052, bug-053). Keel deliberately fails closed where IPLMS fails open.
+    arguments — IPLMS bug-052, bug-053). Outrigger deliberately fails closed where IPLMS fails open.
   - script/audit_gate.py: approval bound to the SHA-256 of the exact content.
   - .claude/rules/supply-chain.md: package reputation / CVE report before install.
 

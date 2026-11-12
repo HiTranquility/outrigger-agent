@@ -1,6 +1,6 @@
 __pycache__/
 *.pyc
-template/.keel/state/
-template/.keel/local/notify.toml
+template/.outrigger/state/
+template/.outrigger/local/notify.toml
 template/reports/
-.keel/state/
+.outrigger/state/

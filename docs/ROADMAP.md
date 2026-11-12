@@ -1,4 +1,4 @@
-# Roadmap — what to add next (from comparing Keel 0.1 with IPLMS, Quy trình học tập/IELTS and the research vault)
+# Roadmap — what to add next (from comparing Outrigger 0.1 with IPLMS, Quy trình học tập/IELTS and the research vault)
 
 Ranked by value for buyers ÷ effort. Nothing here is decided — each item needs the owner's choice (then an ADR).
 
@@ -13,9 +13,9 @@ rule) · fixed report order and "not done / not verified" (IPLMS REQ-007) · dec
 
 | # | Idea | From | Why buyers care | Effort |
 | :-: | :-- | :-- | :-- | :-: |
-| ✅ | *Done 2026-11-11:* #1 → [`RISK_REGISTER.md`](RISK_REGISTER.md) (checked by `RegisterIntegrity` tests) · #7 → core Python pack `template/.keel/packs/python/` | | | |
-| ✅ | *Done 2026-11-12 (Keel 0.2.0, group 1):* script scanning for `.sh .ps1 .bat` + `package.json` scripts + Node.js pack · secret check on `git commit` · agent memory / global config protection · `cli.py trust` | | | |
-| 1 | **Risk register / coverage matrix**: OWASP ASI01–ASI10 → Keel control → test name; every new guard rule traces to a loss (STPA chain: loss → unsafe action → constraint → gate → test) | vault `SO_RUI_RO.md`, `00-070` | Sales proof: "this is what we cover and what we don't" | S |
+| ✅ | *Done 2026-11-11:* #1 → [`RISK_REGISTER.md`](RISK_REGISTER.md) (checked by `RegisterIntegrity` tests) · #7 → core Python pack `template/.outrigger/packs/python/` | | | |
+| ✅ | *Done 2026-11-12 (Outrigger 0.2.0, group 1):* script scanning for `.sh .ps1 .bat` + `package.json` scripts + Node.js pack · secret check on `git commit` · agent memory / global config protection · `cli.py trust` | | | |
+| 1 | **Risk register / coverage matrix**: OWASP ASI01–ASI10 → Outrigger control → test name; every new guard rule traces to a loss (STPA chain: loss → unsafe action → constraint → gate → test) | vault `SO_RUI_RO.md`, `00-070` | Sales proof: "this is what we cover and what we don't" | S |
 | 2 | **Output filter**: long build/test/MATLAB logs go to a file, the agent gets a summary | IPLMS `filter_verbose_output.py` | Token cost — the most visible saving | M |
 | 3 | **`cli.py next-id ADR|SPIKE|BUG`** — numbering from the files, never reused | IPLMS `next_record_id.py`, vault `MA_SO.md` | No duplicate ADR numbers across sessions | S |
 | 4 | **`cli.py doctor`** — lint workflows/records: frontmatter, status vocabulary, broken links, orphan drafts, workflow without a real run | vault `lint.py`, IPLMS `workflow-health` | Buyers' own workflows stay valid after edits | M |

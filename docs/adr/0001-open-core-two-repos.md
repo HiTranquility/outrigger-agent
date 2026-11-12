@@ -2,7 +2,7 @@
 
 - Status: Accepted · 2026-11-11 · decided by: owner (chat)
 ## Context
-Keel is sold. Buyers must grant an agent full permissions, so they need to *read* the safety rules before paying.
+Outrigger is sold. Buyers must grant an agent full permissions, so they need to *read* the safety rules before paying.
 ## Options
 A. Open core (public core Apache-2.0, private paid packs) · B. Fully closed EULA · C. Source-available (PolyForm Noncommercial) · D. Docs CC BY-NC-SA + code commercial.
 ## Decision

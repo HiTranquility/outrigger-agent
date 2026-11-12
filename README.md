@@ -1,10 +1,10 @@
-# ⚓ Keel
+# 🛶 Outrigger
 
-**Let your AI agent sail at full speed — without capsizing.**
+**Let your AI agent go at full speed — without capsizing.**
 *Cho AI agent chạy hết tốc lực mà không lật thuyền.* · [Tiếng Việt](docs/vi/bat-dau.md)
 
-A keel is what lets a sailboat carry full sail in strong wind and stay upright.
-Keel does the same for AI coding agents that people run with **bypass all permissions**: the agent keeps its
+An outrigger is the float lashed beside a canoe: it lets a narrow, fast hull take open water without rolling over.
+Outrigger does the same for AI coding agents that people run with **bypass all permissions**: the agent keeps its
 speed, and the human keeps the helm.
 
 > **Status: 0.2.0, early.** Enforcement works on Claude Code today. Codex, Antigravity/Gemini and Cursor read the
@@ -23,11 +23,11 @@ speed, and the human keeps the helm.
 | 📝 | Every turn leaves a trail | 12 record templates (request, gate, report, ADR, hand-off, postmortem, risk…), a machine log of every block, approval and app launch |
 | 🧠 | Agent memory is watched | Memory writes are logged and backed up; a note like "approve automatically next time" needs your approval, and so do global agent config files |
 | 📱 | You are told | High-risk blocks send a desktop notification or a phone push (ntfy) carrying only risk, project and id — never your data |
-| 🧭 | It grows with you | Packs describe a piece of software to the guard (Python and Node.js ship in the core); your own workflows live in `.keel/local/` and are never overwritten by updates |
+| 🧭 | It grows with you | Packs describe a piece of software to the guard (Python and Node.js ship in the core); your own workflows live in `.outrigger/local/` and are never overwritten by updates |
 
 ## Install (2 minutes)
 
-Requires **Python 3.11+** and git. Keel uses the standard library only and never installs anything for you.
+Requires **Python 3.11+** and git. Outrigger uses the standard library only and never installs anything for you.
 
 ```bash
 git clone https://github.com/<you>/<repo>.git
@@ -47,28 +47,28 @@ The installer shows its plan and asks before writing. It **keeps your existing**
 **Then do the live check** — the one thing only you can verify: start your agent in bypass mode in that project and ask it to run
 
 ```text
-rm -rf sandbox/keel-live-check
+rm -rf sandbox/outrigger-live-check
 ```
 
-You must see `KEEL BLOCKED`. If the command runs, Keel is not protecting you — stop and open an issue.
+You must see `OUTRIGGER BLOCKED`. If the command runs, Outrigger is not protecting you — stop and open an issue.
 
 ## When the guard blocks something
 
 ```text
-KEEL BLOCKED [HIGH] K-3f9a1c2e
+OUTRIGGER BLOCKED [HIGH] OR-3f9a1c2e
 - git-force: force/delete push rewrites shared history
 ```
 
 The agent must stop and show you a GATE (what · why · risk · cost · options · rollback). If you agree, in **your own** terminal:
 
 ```bash
-python .keel/engine/cli.py approve K-3f9a1c2e
+python .outrigger/engine/cli.py approve OR-3f9a1c2e
 ```
 
 | Command | Who | What |
 | :-- | :-: | :-- |
 | `status` · `pending` · `scan` | anyone | state, waiting approvals, dangerous calls in pack files |
-| `approve K-…` · `deny K-…` | **you only** | one use, exact input, 30 minutes |
+| `approve OR-…` · `deny OR-…` | **you only** | one use, exact input, 30 minutes |
 | `trash <path> --reason "…"` · `restore <id>` · `archive <path>` | anyone | soft delete, undo, long-term archive |
 | `trust <file>` · `untrust <file>` | **you only** | stop asking about a script you reviewed — until one byte of it changes |
 | `stop "reason"` / `resume` | anyone / **you only** | emergency brake: block every write |
@@ -81,10 +81,10 @@ python .keel/engine/cli.py approve K-3f9a1c2e
 your-project/
 ├── AGENTS.md  CLAUDE.md  GEMINI.md     ← your rules, plus one pointer block
 ├── sandbox/  reports/  docs/decisions/  ← green zone: experiments, reports, ADRs
-└── .keel/
-    ├── KEEL.md  rules/  templates/      ← the rules the agent reads (protected from the agent)
+└── .outrigger/
+    ├── OUTRIGGER.md  rules/  templates/      ← the rules the agent reads (protected from the agent)
     ├── engine/                          ← the guard: Python, stdlib only, fail-closed
-    ├── keel.toml                        ← zones, limits, trusted hosts, model tiers — you edit, the agent cannot
+    ├── outrigger.toml                        ← zones, limits, trusted hosts, model tiers — you edit, the agent cannot
     ├── packs/<software>/                ← what the guard knows about a tool (python, node, …)
     ├── local/                           ← YOUR workflows and settings — updates never touch it
     └── state/                           ← logs, approvals, backups, trash (git-ignored)
@@ -92,8 +92,8 @@ your-project/
 
 ## Honest limits
 
-- **A seatbelt, not a sandbox.** Commands are read heuristically. Code is checked only in languages Keel can read
-  (shell, PowerShell, batch, `package.json` scripts, Python, Node.js; MATLAB in Keel Pro); imported modules are
+- **A seatbelt, not a sandbox.** Commands are read heuristically. Code is checked only in languages Outrigger can read
+  (shell, PowerShell, batch, `package.json` scripts, Python, Node.js; MATLAB in Outrigger Pro); imported modules are
   not followed. Run untrusted code in a VM.
 - **One platform enforced so far.** Claude Code. The others get the rules as text only.
 - **The bypass guarantee is yours to confirm.** Claude Code's docs say hooks run before every tool call; that a deny
@@ -109,7 +109,7 @@ What is covered, how, which test proves it, and what is not: **[docs/RISK_REGIST
 | :-- | :-- |
 | [Getting started](docs/en/getting-started.md) · [Bắt đầu (Tiếng Việt)](docs/vi/bat-dau.md) | install, notifications, approvals |
 | [Risk register](docs/RISK_REGISTER.md) | coverage, evidence, known gaps |
-| [Design spec](docs/specs/2026-11-11-keel-design.md) · [Decisions (ADR)](docs/adr/README.md) | why it is built this way |
+| [Design spec](docs/specs/2026-11-11-outrigger-design.md) · [Decisions (ADR)](docs/adr/README.md) | why it is built this way |
 | [Roadmap](docs/ROADMAP.md) | what is next |
 
 ## Development
@@ -121,7 +121,7 @@ python -X utf8 -m unittest discover -s tests
 72 tests. Every guard rule needs a test, and a row in the risk register that names it — a test fails if the register
 names a test that does not exist.
 
-## Keel Pro
+## Outrigger Pro
 
 Paid add-ons in a private repository: software packs (MATLAB first: seven workflows from intake to report, a `.m`
 code scanner, a demo project) and an interview that turns your own way of working into workflows.

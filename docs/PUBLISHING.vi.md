@@ -2,36 +2,20 @@
 
 > Viết ngày 2026-11-12. Làm theo thứ tự. Bước nào chưa xong thì **chưa đẩy**.
 
-## 0. 🔴 Đổi tên trước — tên "Keel" đã có người dùng cho đúng loại sản phẩm này
+## 0. Tên sản phẩm — đã chốt "Outrigger" (2026-11-12)
 
-Tra ngày 2026-11-12 (🆕 nguồn do AI tìm, đã mở trang kết quả tìm kiếm, chưa đọc từng repo):
+Tên cũ "Keel" trùng thẳng với [`qiweiz94/keel`](https://github.com/qiweiz94/keel) (guardrails cho AI coding agent),
+nên đã đổi. Lý do và kết quả tra tên nằm ở [ADR-0008](adr/0008-rename-keel-to-outrigger.md).
 
-| Repo | Là gì | Mức đụng |
-| :-- | :-- | :-- |
-| [`qiweiz94/keel`](https://github.com/qiweiz94/keel) | *Guardrails for AI coding agents* cho Claude Code, Cursor, Codex, Gemini CLI; cài bằng `npx @get-keel/cli` | **Trùng thẳng**: cùng tên, cùng loại sản phẩm, cùng khách hàng |
-| [`keel-hq/keel`](https://github.com/keel-hq/keel) | Công cụ cập nhật triển khai Kubernetes, khoảng 2,7k sao, có trang keel.sh | Trùng tên trong giới DevOps |
-| [`rockerlabs/keel`](https://github.com/rockerlabs/keel) | Lớp ngữ cảnh cho AI coding assistant | Trùng tên, gần lĩnh vực |
+| Chỗ cần kiểm | Kết quả ngày 2026-11-12 |
+| :-- | :-- |
+| GitHub | Không có sản phẩm AI agent nào tên Outrigger (74 repo có chữ này, đều khác lĩnh vực) ✅ |
+| PyPI | Tên `outrigger` **đã có chủ** (công cụ tin sinh học, 2017) → nếu phát hành gói thì dùng `outrigger-agent` |
+| npm | Tên `outrigger` **đã có chủ** (2016) → dùng `outrigger-agent` |
+| Nhãn hiệu | ⚠️ **Chưa tra.** Tra WIPO Global Brand Database và Cục Sở hữu trí tuệ Việt Nam, nhóm 9 và 42. "Outrigger" cũng là tên một chuỗi khách sạn (khác nhóm ngành) |
+| Tên miền | ⚠️ Chưa tra |
 
-Hệ quả nếu giữ tên: người tìm "keel agent" ra sản phẩm khác; khó đăng ký nhãn hiệu; dễ bị yêu cầu đổi tên sau khi đã
-có khách. **Đổi bây giờ rẻ hơn rất nhiều.**
-
-### Gợi ý tên (cùng hình ảnh "chạy nhanh mà không lật")
-
-| Tên | Nghĩa | Ưu | Nhược |
-| :-- | :-- | :-- | :-- |
-| **Outrigger** ⭐ | cái phao gắn bên hông xuồng: nhờ nó xuồng chạy nhanh mà không lật | đúng ý nhất; lần tìm ngày 2026-11-12 không thấy sản phẩm guardrail nào dùng | dài, người Việt khó đọc |
-| **Hoa Tiêu** (`hoatieu`) | người dẫn tàu qua vùng nước nguy hiểm vào cảng | bản sắc Việt, có câu chuyện để kể, gần như chắc chắn không đụng ai | khách nước ngoài cần một dòng giải thích |
-| **Ballast** | khối nặng đáy tàu giữ thăng bằng | ngắn, dễ nhớ | là từ thông dụng, nhiều dự án phần mềm khác lĩnh vực đã dùng |
-| **Leeboard** | tấm chắn hông giúp thuyền không trôi dạt | lạ, ít trùng | ít người biết nghĩa |
-
-Chọn xong phải kiểm **bốn chỗ** trước khi chốt: tên repo trên GitHub · tên gói trên npm và PyPI (để dành cho sau) ·
-tên miền · nhãn hiệu (tra WIPO Global Brand Database và Cục Sở hữu trí tuệ Việt Nam, nhóm 9 và 42).
-
-### Đổi tên trong mã nguồn
-
-Tên đang nằm ở: thư mục `.keel/`, file `keel.toml`, `KEEL.md`, chuỗi `KEEL BLOCKED`, mã duyệt `K-…`, marker
-`<!-- keel:start -->`, tên gói Python `keel`, README và tài liệu. Đổi bằng một lượt tìm–thay có kiểm, rồi chạy lại
-toàn bộ test. Các project đã cài (hiện chỉ `Downloads/Web`) cài lại sau khi đổi.
+- [ ] Tra nhãn hiệu và tên miền trước khi in tên lên bất cứ thứ gì tốn tiền.
 
 ## 1. Điền chỗ còn trống
 
@@ -48,7 +32,7 @@ python -X utf8 -m unittest discover -s tests
 - [ ] 72 test qua.
 - [ ] **Kiểm tra sống ở chế độ bypass** trong một project đã cài (README, mục Install). Chưa làm bước này thì
       chưa được viết "chặn được khi bypass" ở bất cứ đâu.
-- [ ] `python .keel/engine/cli.py notify-test` — thử thông báo thật.
+- [ ] `python .outrigger/engine/cli.py notify-test` — thử thông báo thật.
 - [ ] Repo trả phí: chạy test MATLAB của demo một lần trên máy có MATLAB.
 
 ## 3. Soát thứ không được lên GitHub
@@ -73,8 +57,8 @@ Trên GitHub tạo **hai repo rỗng** (không tick "Add README"):
 
 | Repo | Chế độ | Nội dung |
 | :-- | :-- | :-- |
-| `<tên>` | **Public** | thư mục `keel-agent` |
-| `<tên>-pro` | **Private** | thư mục `keel-agent-pro` |
+| `<tên>` | **Public** | thư mục `outrigger-agent` |
+| `<tên>-pro` | **Private** | thư mục `outrigger-agent-pro` |
 
 ```bash
 git remote add origin https://github.com/<you>/<tên>.git

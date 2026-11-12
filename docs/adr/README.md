@@ -11,3 +11,4 @@ Never delete an ADR. To change a decision, write a new ADR and mark the old one 
 | [0005](0005-release-1-scope.md) | Release 1 scope |
 | [0006](0006-soft-delete-and-schedules.md) | Soft delete; schedules are high risk |
 | [0007](0007-coexist-trust-model-hint.md) | Install beside existing rules; trust by SHA; model hint |
+| [0008](0008-rename-keel-to-outrigger.md) | Product renamed from Keel to Outrigger |

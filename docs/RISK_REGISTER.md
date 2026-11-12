@@ -1,9 +1,9 @@
-# Keel risk register — what is covered, how it is enforced, which test proves it
+# Outrigger risk register — what is covered, how it is enforced, which test proves it
 
 > Every guard rule must trace back to a loss (STPA chain: **loss → unsafe action → constraint → gate → test**).
-> A row without a test is a gap and is labelled as such. `tests/test_keel.py::RegisterIntegrity` fails if a test named
+> A row without a test is a gap and is labelled as such. `tests/test_outrigger.py::RegisterIntegrity` fails if a test named
 > here does not exist — the register cannot silently drift away from the code.
-> Last reviewed: 2026-11-12 · Keel 0.2.0
+> Last reviewed: 2026-11-12 · Outrigger 0.2.0
 
 ## 1. Losses we protect against
 
@@ -19,12 +19,12 @@
 ## 2. Risks, controls and evidence
 
 Enforcement: **guard** = blocked by the hook whatever the agent decides · **rule** = written in `AGENTS.md` /
-`.keel/rules`, relies on the agent following it · **gap** = known hole, see §4.
+`.outrigger/rules`, relies on the agent following it · **gap** = known hole, see §4.
 
 | Id | Unsafe action | Loss | Constraint / gate | Enforcement | Tests |
 | :-- | :-- | :-: | :-- | :-: | :-- |
 | R-01 | Delete files (`rm`, `del`, `Remove-Item`, `find -delete`, MATLAB `delete`) | L-1 | soft delete via `cli.py trash`; root/outside/never_delete = high; bulk = approval | guard | `Rules.test_root_delete_high` `Rules.test_project_delete_redirected_to_trash` `Rules.test_never_delete_adr` `TrashRestore.test_roundtrip_with_manifest` `TrashRestore.test_bulk_trash_needs_approval` |
-| R-02 | Overwrite a file the user owns | L-1 | yellow zone: copy to `.keel/state/backups/` before the edit | guard | `Rules.test_yellow_write_backs_up` |
+| R-02 | Overwrite a file the user owns | L-1 | yellow zone: copy to `.outrigger/state/backups/` before the edit | guard | `Rules.test_yellow_write_backs_up` |
 | R-03 | Rewrite or discard git history | L-1 | force push, `reset --hard`, `clean -f` = high | guard | `Rules.test_git_rewrite_high` |
 | R-04 | Read or copy secrets | L-2 | red zone, even for reads; `.env.example` allowed | guard | `Rules.test_secret_read_blocked` |
 | R-05 | Send data out (upload, POST, `scp`, `git push`) | L-2 | upload = high; push = approval | guard | `Rules.test_upload_high` `Rules.test_git_push_medium` |
@@ -48,9 +48,9 @@ Enforcement: **guard** = blocked by the hook whatever the agent decides · **rul
 Source: OWASP GenAI Security Project, *OWASP Top 10 for Agentic Applications for 2026*, published 2025-12-09,
 CC BY-SA 4.0 — entry names checked in the official PDF on 2026-11-11. Only the names are used here.
 
-| OWASP entry | Keel rows | Coverage in 0.1 |
+| OWASP entry | Outrigger rows | Coverage in 0.1 |
 | :-- | :-- | :-- |
-| ASI01 Agent Goal Hijack | R-15, R-10 | **partial** — Keel cannot detect a hijack, but the guard does not trust the agent's intent |
+| ASI01 Agent Goal Hijack | R-15, R-10 | **partial** — Outrigger cannot detect a hijack, but the guard does not trust the agent's intent |
 | ASI02 Tool Misuse and Exploitation | R-01, R-03, R-05, R-08, R-13 | **covered (heuristic)** |
 | ASI03 Identity and Privilege Abuse | R-04, R-08, R-10, R-19 | **partial** — no per-credential scoping |
 | ASI04 Agentic Supply Chain Vulnerabilities | R-06; `.mcp.json` and hook settings are protected | **partial** — no signature or CVE check by the machine |
@@ -68,13 +68,13 @@ CC BY-SA 4.0 — entry names checked in the official PDF on 2026-11-11. Only the
 | G-1 | Scripts in languages without a scanner (Ruby, Go, Makefile targets, `docker run`, compiled programs) and scripts generated while another script runs are not checked | run untrusted code in a VM | more packs as real cases appear |
 | G-2 | `python -m <module>` and modules imported by a scanned script (Python, Node.js) are not followed | `PythonPack.test_module_run_not_scanned_documented_limit` pins this behaviour so a change is noticed | import-following scan (opt-in) |
 | G-3 | Invented sources / unchecked numbers cannot be detected by a hook | report must list sources 🆕 and "not verified" | `cli.py doctor` link checker |
-| G-4 | A memory note can mislead without using any phrase the guard looks for; memory already poisoned before Keel was installed is not reviewed | writes are logged in the daily guard log for the human to read | `cli.py doctor` memory review |
+| G-4 | A memory note can mislead without using any phrase the guard looks for; memory already poisoned before Outrigger was installed is not reviewed | writes are logged in the daily guard log for the human to read | `cli.py doctor` memory review |
 | G-5 | Obfuscated commands the splitter cannot see (variables built at run time, aliases) | unparseable input is gated (medium) | more parser cases from real incidents |
 | G-6 | That a deny holds under `bypassPermissions` is implied, not stated, by Claude Code docs | mandatory live check after install | re-check each Claude Code release |
 
 ## 5. How to add a row
 
 1. Name the loss (§1) and the unsafe action.
-2. Add the guard rule **and** a test in `tests/test_keel.py`; add a selftest case in `cli.py` if users should see it.
+2. Add the guard rule **and** a test in `tests/test_outrigger.py`; add a selftest case in `cli.py` if users should see it.
 3. Add the row here with the test names in backticks. `RegisterIntegrity` checks they exist.
 4. Behaviour change for users → ADR.

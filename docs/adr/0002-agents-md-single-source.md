@@ -6,6 +6,6 @@ Claude Code reads `CLAUDE.md` (and `AGENTS.md` only when no CLAUDE.md exists); C
 ## Options
 A. One file per platform, maintained by hand · B. AGENTS.md + shims + one engine with adapters · C. Ship as a Claude Code plugin only.
 ## Decision
-**B.** `CLAUDE.md` = `@AGENTS.md`, `GEMINI.md` points to it; enforcement logic exists once in `.keel/engine`.
+**B.** `CLAUDE.md` = `@AGENTS.md`, `GEMINI.md` points to it; enforcement logic exists once in `.outrigger/engine`.
 ## Consequences
-AGENTS.md must stay short (details live in `.keel/rules/`). Release 1 ships only the Claude Code adapter.
+AGENTS.md must stay short (details live in `.outrigger/rules/`). Release 1 ships only the Claude Code adapter.
