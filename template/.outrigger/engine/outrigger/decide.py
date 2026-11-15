@@ -26,8 +26,28 @@ RISKY_MCP = re.compile(r"(delete|remove|kill|terminate|move|write|edit|create|st
 MEMORY_SUSPICIOUS = re.compile(
     r"ignore (all |any )?(previous|prior|above|earlier) (instructions|rules)|always approve|approve (it |them )?automatically"
     r"|without asking( the user)?|skip (the )?(gate|approval|confirmation)s?|(disable|turn off|remove|uninstall) (outrigger|the guard|hooks?)"
-    r"|bypass (outrigger|the guard|approval)|cli\.py\s+(approve|trust|resume)|do not (tell|inform|mention to) the user"
+    r"|bypass (outrigger|the guard|approval)|do not (tell|inform|mention to) the user"
+    # 0.3.0 (FP-4): the bare command name is NOT an instruction — a note that only DESCRIBES the approval flow
+    # ("writes need the user's `cli.py approve OR-…`") was flagged. Flag only when the note tells the AGENT to run it.
+    r"|(you|agent|claude|ai|assistant)\s+(should|must|can|may)?\s*(run|execute)s?\s+[^\n]{0,40}cli\.py\s+(approve|trust|resume)"
+    r"|(tự|hãy|cứ)\s+(chạy|gõ)\s+[^\n]{0,40}cli\.py\s+(approve|trust|resume)"
     r"|bỏ qua (luật|quy tắc|guard|outrigger)|không cần hỏi|tự (động )?duyệt|tắt (outrigger|guard|hook)", re.IGNORECASE)
+# Medium-risk findings that still stop and ask in light mode (ADR-0009):
+#   dangerous code about to run   pack-danger · script-* · pack-unreadable  ("found danger while reading a document,
+#                                 about to execute" — the case the owner named; a trusted script is not asked)
+#   cannot read it, fail closed   unparsed · secret-scan-failed
+#   loses work                    delete-redirect · bulk · git-discard
+#   leaves the machine / installs git-push · install
+#   weakens the guard later       memory-suspicious · agent-config
+# Everything else at medium risk (write-outside, net-unknown, app, mcp-risky, git-branch, git-stash, git-clone,
+# secret-search) is ALLOWED in light mode, logged, and listed in the daily summary.
+LIGHT_STILL_ASK = {
+    "pack-danger", "pack-unreadable", "script-depth", "script-too-large", "script-unreadable", "script-unparsed",
+    "unparsed", "secret-scan-failed",
+    "delete-redirect", "bulk", "git-discard",
+    "git-push", "install",
+    "memory-suspicious", "agent-config",
+}
 APP_MCP = re.compile(r"open_application|request_access|preview_start|navigate", re.IGNORECASE)
 
 
@@ -40,6 +60,7 @@ class Decision:
     approved: bool = False
     backups: list[str] = field(default_factory=list)
     apps: list[str] = field(default_factory=list)
+    light: bool = False   # allowed only because light mode lets medium risk through (logged, not asked)
 
     def reason(self, cfg: Config) -> str:
         top = [f for f in self.findings if f.risk == self.risk] or self.findings
@@ -167,6 +188,8 @@ def decide(cfg: Config, tool: str, tool_input: dict, cwd: Path) -> Decision:
     apps = [f.app for f in findings if f.app]
     if risk == "low":
         return Decision(True, risk, findings, backups=backups, apps=apps)
+    if risk == "medium" and cfg.light and not any(f.code in LIGHT_STILL_ASK for f in findings):
+        return Decision(True, risk, findings, backups=backups, apps=apps, light=True)
     aid = state.approval_id(tool, tool_input)
     if state.consume_approval(cfg, aid):
         return Decision(True, risk, findings, approval=aid, approved=True, backups=backups, apps=apps)

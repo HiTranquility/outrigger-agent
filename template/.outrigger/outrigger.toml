@@ -54,6 +54,15 @@ allow_hosts = [
 # Settings with secrets (ntfy topic) live in .outrigger/local/notify.toml, which is git-ignored.
 on = ["high"]
 
+[approvals]
+# "light"  (default for new installs, ADR-0009): only HIGH risk stops and waits for you — mass deletes, force-push,
+#          secrets, download-and-run, writes to protected files, the guard itself — plus a script about to run that
+#          contains dangerous calls you have not trusted, deleting project files, installing, and pushing.
+#          Other medium risk (unknown web sites, writes to allowed folders, opening apps…) runs, is logged, and is
+#          listed in reports/outrigger/<day>.md.
+# "strict" (0.2.0 behaviour): every medium risk stops too.
+mode = "light"
+
 [models]
 # Tiers, not product names: models and prices change, and each vendor (Claude, Codex, Gemini...) has its own line-up.
 # The agent only SUGGESTS a tier with its options (see .outrigger/rules/models.md); you switch models yourself.

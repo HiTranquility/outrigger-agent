@@ -7,7 +7,7 @@ An outrigger is the float lashed beside a canoe: it lets a narrow, fast hull tak
 Outrigger does the same for AI coding agents that people run with **bypass all permissions**: the agent keeps its
 speed, and the human keeps the helm.
 
-> **Status: 0.2.0, early.** Enforcement works on Claude Code today. Codex, Antigravity/Gemini and Cursor read the
+> **Status: 0.3.0, early.** Enforcement works on Claude Code today. Codex, Antigravity/Gemini and Cursor read the
 > rules but are not yet enforced by a hook (adapters planned). Read [Honest limits](#honest-limits) before relying on it.
 
 ## What it does
@@ -23,6 +23,8 @@ speed, and the human keeps the helm.
 | 📝 | Every turn leaves a trail | 12 record templates (request, gate, report, ADR, hand-off, postmortem, risk…), a machine log of every block, approval and app launch |
 | 🧠 | Agent memory is watched | Memory writes are logged and backed up; a note like "approve automatically next time" needs your approval, and so do global agent config files |
 | 📱 | You are told | High-risk blocks send a desktop notification or a phone push (ntfy) carrying only risk, project and id — never your data |
+| 🪶 | It asks only when it matters | **Light mode** (default from 0.3.0): high risk, untrusted scripts with dangerous calls, deletes, installs and pushes stop and wait; other medium risk runs and is listed in the daily log. `[approvals] mode = "strict"` asks for every medium risk |
+| 🔁 | Your work becomes a workflow | Every call goes to a local trace log. After a task no workflow matched, the agent asks once; `cli.py capture` drafts the workflow from what actually ran, not from memory |
 | 🧭 | It grows with you | Packs describe a piece of software to the guard (Python and Node.js ship in the core); your own workflows live in `.outrigger/local/` and are never overwritten by updates |
 
 ## Install (2 minutes)
@@ -73,6 +75,7 @@ python .outrigger/engine/cli.py approve OR-3f9a1c2e
 | `trust <file>` · `untrust <file>` | **you only** | stop asking about a script you reviewed — until one byte of it changes |
 | `stop "reason"` / `resume` | anyone / **you only** | emergency brake: block every write |
 | `empty-trash` | **you only** | hard delete, typed confirmation |
+| `capture --title "…" --since <time>` | anyone | draft a workflow from the trace log into `local/workflows/drafts/` (`--dry` to preview) |
 | `selftest` · `notify-test` | anyone | check the rules and your notification channel |
 
 ## What gets installed

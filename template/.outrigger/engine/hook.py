@@ -36,9 +36,14 @@ def claude_pre_tool(payload: dict) -> int:
     for app in d.apps:
         state.log_app(cfg, app, "allowed" if d.allow else "blocked", d.approval)
 
+    # 0.3.0: every call goes to the trace log, the raw material for `cli.py capture` (turn work into a workflow).
+    state.log_trace(cfg, {"tool": tool, "cwd": str(cwd), "summary": summary, "risk": d.risk,
+                          "decision": "blocked" if not d.allow else ("light" if d.light else "allowed")})
+
     if d.allow:
         if d.findings or d.approved:
-            state.log_decision(cfg, {"tool": tool, "risk": d.risk, "decision": "approved" if d.approved else "allowed",
+            state.log_decision(cfg, {"tool": tool, "risk": d.risk,
+                                     "decision": "approved" if d.approved else ("allowed-light" if d.light else "allowed"),
                                      "id": d.approval, "codes": [f.code for f in d.findings], "summary": summary})
         return 0
 

@@ -19,8 +19,24 @@ Which one? idea or request → REQ · choice made → ADR · unknown territory �
 unfinished → HANDOFF · something went wrong → POSTMORTEM (and a BUG if code is at fault) · could go wrong → RISK.
 Do not invent a new document format: if none fits, ask the user, then draft a template in `.outrigger/local/`.
 
+## Turning work into a workflow (0.3.0)
+
+Recording how the user works is the main reason Outrigger is installed. When a piece of work is finished and **no
+workflow matched it at the start** (first time doing this kind of task — using an app, a research pass, fixing a
+kind of problem), ask the user **one** question: *"Record this as a workflow?"* Do not ask again in the same task.
+
+If they say yes, run `python .outrigger/engine/cli.py capture --title "<short imperative>" --since <time the work
+started>` (or `--last <N calls>`). It writes a draft from the guard's trace log — the commands that actually ran,
+files changed, sources fetched, where the guard stopped — into `.outrigger/local/workflows/drafts/`. Then fill in
+**only** what the log cannot know and mark it as yours: when to use it, what "done" looks like, what went wrong.
+Remove detours the user confirms were detours. Never promote a draft yourself.
+
+When the task **did** follow a workflow and something changed (a step added, a gate that turned out routine), add a
+row to that workflow's *Changelog* instead of capturing a new one.
+
 - Numbers (`NNNN`, `NNN`) continue from the highest existing file of that type; never reuse one.
 - Search for an existing record on the same topic before creating a new one.
-- The guard writes machine logs: `.outrigger/state/logs/audit-YYYY-MM.jsonl`, `apps.jsonl`, and a daily
+- The guard writes machine logs: `.outrigger/state/logs/audit-YYYY-MM.jsonl`, `trace-YYYY-MM.jsonl` (every call,
+  redacted, local only — the source for `capture`), `apps.jsonl`, and a daily
   summary in `reports/outrigger/YYYY-MM-DD.md`. Do not edit them.
 - Every report says what was **not** done or **not** verified. "Done" without evidence is not done.

@@ -1,6 +1,7 @@
 """Risk rules for shell commands. Each rule returns Findings; the decision takes the worst one."""
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 import json
@@ -64,16 +65,52 @@ OUTRIGGER_CLI = re.compile(r"\.outrigger[\\/]engine[\\/]cli\.py", re.IGNORECASE)
 REDIRECT_TARGET = re.compile(r"(?:^|[^<0-9&])\d?>>?\s*(\"[^\"]+\"|'[^']+'|[^\s;&|]+)")
 
 
+CD = {"cd", "pushd", "set-location", "sl", "chdir"}
+MSYS_DRIVE = re.compile(r"^/([a-zA-Z])(/|$)")
+
+
+def _as_path(token: str, cwd: Path) -> Path:
+    p = MSYS_DRIVE.sub(lambda m: m.group(1) + ":/", token.strip("\"'"))   # Git Bash: /c/Users -> c:/Users
+    p = Path(os.path.expandvars(os.path.expanduser(p)))
+    return p if p.is_absolute() else cwd / p
+
+
+def _self_hit(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -> str | None:
+    """A path to Outrigger's own engine / config / state / hook settings OF THE GUARDED PROJECT, used by a command
+    that is not read-only. Before 0.3.0 this matched the raw text, so a read-only `git log` in ANOTHER repository
+    whose path happened to contain `.outrigger/engine` was blocked as high risk (FP-6, ROADMAP 2026-11-12).
+    `cd` is followed so relative paths resolve where they will run. Unparsed commands keep the old raw match."""
+    if not segments:
+        m = OUTRIGGER_SELF.search(OUTRIGGER_CLI.sub("", command))
+        return m.group(0) if m else None
+    cur = cwd
+    for seg in segments:
+        if not seg:
+            continue
+        head = base(seg[0])
+        if head in CD and len(seg) > 1:
+            cur = _as_path(seg[1], cur)
+            continue
+        if head in READ_ONLY:
+            continue
+        for tok in seg:
+            for part in tok.split("="):
+                if OUTRIGGER_CLI.search(part) or not OUTRIGGER_SELF.search(part):
+                    continue
+                if cfg.rel(_as_path(part, cur)) is not None:        # inside the guarded project
+                    return OUTRIGGER_SELF.search(part).group(0)
+    return None
+
+
 def check_raw(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -> list[Finding]:
     out = []
     if PIPE_TO_SHELL.search(command):
         out.append(Finding("high", "pipe-to-shell", "download piped straight into a shell or interpreter"))
     if OUTRIGGER_HUMAN_ONLY.search(command):
         out.append(Finding("high", "self-approval", "approve/deny/resume/empty-trash/trust are human-only commands"))
-    m = OUTRIGGER_SELF.search(OUTRIGGER_CLI.sub("", command))
-    read_only = all(base(s[0]) in READ_ONLY for s in segments if s)
-    if m and not read_only:
-        out.append(Finding("high", "outrigger-self", f"command touches Outrigger or hook configuration ({m.group(0)})"))
+    hit = _self_hit(command, segments, cfg, cwd)
+    if hit:
+        out.append(Finding("high", "outrigger-self", f"command touches Outrigger or hook configuration ({hit})"))
     for t in REDIRECT_TARGET.findall(command):
         t = t.strip("\"'")
         if t.lower() in {"/dev/null", "nul", "&1", "&2"}:

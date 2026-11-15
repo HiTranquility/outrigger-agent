@@ -27,6 +27,9 @@ DEFAULTS: dict = {
                "approval_minutes": 30, "scan_max_files": 3000},
     "sources": {"allow_hosts": ["mathworks.com", "python.org", "pypi.org", "github.com"]},
     "notify": {"on": ["high"]},
+    # 0.3.0: "strict" = block high AND medium risk (0.2.0 behaviour, kept for installs that have no [approvals]).
+    #        "light"  = block high risk only; medium is logged and shown in the daily summary (ADR-0009).
+    "approvals": {"mode": "strict"},
 }
 
 
@@ -59,6 +62,11 @@ class Config:
     @property
     def project_name(self) -> str:
         return self.section("project").get("name") or self.root.name
+
+    @property
+    def light(self) -> bool:
+        """Light mode (ADR-0009). Anything but the exact word "light" means strict: an unknown value fails closed."""
+        return str(self.section("approvals").get("mode", "strict")).strip().lower() == "light"
 
     def limit(self, key: str) -> int:
         return int(self.section("limits").get(key, DEFAULTS["limits"][key]))

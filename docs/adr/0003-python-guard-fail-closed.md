@@ -1,6 +1,6 @@
 # ADR-0003 — Guard in Python, fail-closed, human-only approvals
 
-- Status: Accepted · 2026-11-11
+- Status: Accepted · 2026-11-11 · **amended by [ADR-0009](0009-light-mode-and-workflow-capture.md)**: in light mode (new installs) only high risk and a short list of medium risk need the terminal approval
 ## Context
 Rules in Markdown are advice; under bypass mode only hooks enforce. IPLMS's `guard_command.py` fails **open** on odd input.
 ## Options

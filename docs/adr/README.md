@@ -12,3 +12,4 @@ Never delete an ADR. To change a decision, write a new ADR and mark the old one 
 | [0006](0006-soft-delete-and-schedules.md) | Soft delete; schedules are high risk |
 | [0007](0007-coexist-trust-model-hint.md) | Install beside existing rules; trust by SHA; model hint |
 | [0008](0008-rename-keel-to-outrigger.md) | Product renamed from Keel to Outrigger |
+| [0009](0009-light-mode-and-workflow-capture.md) | Light mode by default; capture workflows from the trace log (amends 0003) |

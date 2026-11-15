@@ -36,7 +36,7 @@ Always prefer the cheapest level that answers the question; go up one level at a
 ## 4. Gates — when to stop and ask  → `.outrigger/rules/gates.md`
 
 Stop and ask using `.outrigger/templates/GATE.md` (what · why · risk · cost · options · recommendation · rollback) when:
-moving to a new phase · raising the level · a high/medium risk action · an unknown or untrusted source ·
+moving to a new phase · raising the level · a risk action the guard blocks · an unknown or untrusted source ·
 a task with no workflow · conflict with an ADR · anything irreversible.
 When the guard blocks with an id `OR-…`, show the user the GATE plus the exact line they can run in **their own terminal**:
 `python .outrigger/engine/cli.py approve OR-…` — then retry the identical action.
@@ -63,6 +63,8 @@ Installing any package/extension/MCP/skill = L3: name, version, why, reputation,
   that ends unfinished leaves a HANDOFF; a loss or near miss gets a POSTMORTEM. Templates and paths: `.outrigger/rules/records.md`.
 - A decision with alternatives (including the user's choice at a GATE) → `docs/decisions/ADR-NNNN-*.md`
   from `.outrigger/templates/ADR.md`, written **in the same turn** the user decides.
+- Finished something **no workflow matched**? Ask once: *"Record this as a workflow?"* If yes, draft it with
+  `cli.py capture --title "…" --since <start>` (built from the guard's trace log, not memory) — `.outrigger/rules/records.md`.
 - A workflow you draft goes to `.outrigger/local/workflows/drafts/` with `status: draft`; only the user promotes it.
   When the user wants their own workflow and `.outrigger/builder/INTERVIEW.md` exists, follow that interview.
 

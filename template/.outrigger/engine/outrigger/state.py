@@ -46,6 +46,27 @@ def log_decision(cfg: Config, record: dict) -> None:
     _append(cfg.state_dir / "logs" / f"audit-{now():%Y-%m}.jsonl", record)
 
 
+def log_trace(cfg: Config, record: dict) -> None:
+    """Every tool call, one line, redacted, local only (0.3.0). `cli.py capture` turns a stretch of it into a
+    draft workflow. Never leaves the machine; `.outrigger/state/` is git-ignored."""
+    record = {"ts": now().isoformat(timespec="seconds"), **record}
+    record["summary"] = redact(str(record.get("summary", "")))[:300]
+    _append(cfg.state_dir / "logs" / f"trace-{now():%Y-%m}.jsonl", record)
+
+
+def read_trace(cfg: Config, since: datetime | None = None) -> list[dict]:
+    out = []
+    for f in sorted((cfg.state_dir / "logs").glob("trace-*.jsonl")):
+        for line in f.read_text(encoding="utf-8").splitlines():
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if since is None or datetime.fromisoformat(rec["ts"]) >= since:
+                out.append(rec)
+    return out
+
+
 def log_app(cfg: Config, app: str, decision: str, approval: str | None) -> None:
     _append(cfg.state_dir / "logs" / "apps.jsonl",
             {"ts": now().isoformat(timespec="seconds"), "app": redact(app)[:200], "decision": decision,

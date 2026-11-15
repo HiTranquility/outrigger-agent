@@ -18,7 +18,14 @@ dangerous = [
   'send2trash', '\bshutil\.move\s*\(',
   # running other programs / hidden code
   '\bsubprocess\.(run|call|check_call|check_output|Popen|getoutput|getstatusoutput)\s*\(',
-  '\bos\.(system|popen|exec\w*|spawn\w*|startfile)\s*\(', '(^|[^.\w])(eval|exec)\s*\(', '__import__\s*\(',
+  '\bos\.(system|popen|exec\w*|spawn\w*|startfile)\s*\(', '(^|[^.\w])(eval|exec)\s*\(',
+  # 0.3.0 (FP-5): `__import__('datetime')` is harmless; flag a dynamic import only when the name is computed or is a
+  # module that runs programs, deletes files or touches the OS.
+  '''__import__\s*\(\s*[^'")\s]''', '''__import__\s*\(\s*['"](os|subprocess|shutil|ctypes|socket|sys|importlib|runpy)['"]''',
+  # 0.3.0 (R-20): loading ANOTHER file's code hides that file's dangerous calls from this scan, because only the
+  # script being run is read. A clean wrapper that runs a dangerous script is itself a reason to ask.
+  '\brunpy\.run_(path|module)\s*\(', '\bimportlib\.(import_module|util\.spec_from_file_location)\s*\(',
+  'exec\s*\(\s*(open|compile)\s*\(',
   'ctypes\.(windll|cdll|WinDLL)', '\bwinreg\b', '\b_winreg\b',
   # sending data out
   '\brequests\.(post|put|patch|delete)\s*\(', '\bhttpx\.(post|put|patch|delete)\s*\(', '\bsmtplib\b', '\bftplib\b',
