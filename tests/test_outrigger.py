@@ -382,6 +382,19 @@ class SelfPathOtherRepo(Project):
         finally:
             shutil.rmtree(other, ignore_errors=True)
 
+    def test_agent_running_installer_on_this_project_is_high(self):   # R-24
+        cmd = f'python -X utf8 ../outrigger-agent/install.py --target "{self.tmp.as_posix()}" --update --yes'
+        self.assertEqual(self.d("Bash", {"command": cmd}).risk, "high")
+
+    def test_installer_dry_run_and_other_target_pass(self):
+        self.assertTrue(self.d("Bash", {"command": f'python install.py --target "{self.tmp.as_posix()}" --update --dry'}).allow)
+        other = Path(tempfile.mkdtemp())
+        try:
+            r = self.d("Bash", {"command": f'python install.py --target "{other.as_posix()}" --yes'})
+            self.assertNotIn("outrigger-self", [f.code for f in r.findings])
+        finally:
+            shutil.rmtree(other, ignore_errors=True)
+
     def test_git_bash_drive_path(self):
         p = "/" + self.tmp.as_posix()[0].lower() + self.tmp.as_posix()[2:] if self.tmp.as_posix()[1] == ":" else None
         if p:

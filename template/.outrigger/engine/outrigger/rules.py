@@ -93,6 +93,13 @@ def _self_hit(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
             continue
         if head in READ_ONLY:
             continue
+        # R-24: the installer rewrites the engine, rules and hooks of its --target. Run by the agent against the
+        # guarded project (not --dry), it is an edit to the guard that the path check above cannot see.
+        if any(Path(t).name.lower() == "install.py" for t in seg) and "--dry" not in seg:
+            low = [t.lower() for t in seg]
+            tgt = seg[low.index("--target") + 1] if "--target" in low and low.index("--target") + 1 < len(seg) else None
+            if tgt is not None and cfg.rel(_as_path(tgt, cur)) is not None:
+                return "install.py --target <this project>"
         for tok in seg:
             for part in tok.split("="):
                 if OUTRIGGER_CLI.search(part) or not OUTRIGGER_SELF.search(part):
