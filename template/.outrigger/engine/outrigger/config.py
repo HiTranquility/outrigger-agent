@@ -16,6 +16,9 @@ DEFAULTS: dict = {
         "red_allow": ["**/.env.example", ".env.example"],
         "protected": [".outrigger/engine/**", ".outrigger/outrigger.toml", ".outrigger/OUTRIGGER.md", ".outrigger/rules/**", ".outrigger/packs/**", ".outrigger/state/**", ".outrigger/local/notify.toml",
                       ".claude/settings.json", ".claude/settings.local.json", ".mcp.json", "stop"],
+        # 0.3.1 (ADR-0010): append-only zone for source material the project must never change (scans, exports,
+        # interview transcripts). A NEW file may be created there; no byte of an existing file may change.
+        "originals": [],
         "never_delete": ["docs/decisions/**", ".outrigger/state/logs/**"],
         "outside_allow": ["~/.claude/**", "$TEMP/**", "$TMP/**"],
         "memory": ["~/.claude/projects/**/memory/**", "~/.codex/memories/**", "~/.gemini/memory/**"],
@@ -87,6 +90,8 @@ class Config:
             return "red"
         if match_any(rel, z.get("protected", [])):
             return "protected"
+        if match_any(rel, z.get("originals", [])):
+            return "originals"
         if match_any(rel, z.get("green", [])):
             return "green"
         return "yellow"

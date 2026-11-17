@@ -26,7 +26,15 @@ class Finding:
 
 DELETE = {"rm", "del", "erase", "rd", "rmdir", "remove-item", "ri", "unlink", "shred", "srm", "trash-put", "rimraf"}
 READ_ONLY = {"cat", "type", "get-content", "gc", "less", "more", "head", "tail", "grep", "rg", "findstr",
-             "select-string", "ls", "dir", "get-childitem", "gci", "wc", "stat", "file", "test-path", "echo"}
+             "select-string", "ls", "dir", "get-childitem", "gci", "wc", "stat", "file", "test-path", "echo",
+             # 0.3.1 (ADR-0010 C): comparing files changes nothing — a `diff` of two engines was blocked as high risk
+             "diff", "cmp", "comm", "fc", "compare-object", "sha256sum", "md5sum", "get-filehash"}
+# Commands that write their path arguments (ADR-0010 A). Before 0.3.1 only `>` redirects into protected zones were
+# checked, so `cp x protected/y` passed. MOVE-like commands also change their source; COPY-like ones only the target.
+MOVE_LIKE = {"mv", "move", "move-item", "mi", "rename-item", "rni", "ren", "rename"}
+COPY_LIKE = {"cp", "copy", "copy-item", "cpi", "xcopy", "robocopy", "install", "ln"}
+WRITE_ALL = {"tee", "touch", "truncate", "set-content", "add-content", "out-file", "new-item", "ni", "clear-content"}
+HELP_FLAGS = {"-h", "--help", "/?"}
 SYSTEM_HIGH = {"format", "diskpart", "bcdedit", "shutdown", "restart-computer", "stop-computer", "regedit",
                "set-mppreference", "add-mppreference", "vssadmin", "mkfs", "dd", "runas", "su", "takeown",
                "set-executionpolicy", "cipher", "__sudo__", "iex", "invoke-expression", "__encoded__"}
@@ -113,7 +121,7 @@ def check_raw(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
     out = []
     if PIPE_TO_SHELL.search(command):
         out.append(Finding("high", "pipe-to-shell", "download piped straight into a shell or interpreter"))
-    if OUTRIGGER_HUMAN_ONLY.search(command):
+    if OUTRIGGER_HUMAN_ONLY.search(command) and not _only_help(command, segments):
         out.append(Finding("high", "self-approval", "approve/deny/resume/empty-trash/trust are human-only commands"))
     hit = _self_hit(command, segments, cfg, cwd)
     if hit:
@@ -128,12 +136,52 @@ def check_raw(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
                 out.append(Finding("medium", "agent-config", f"redirects output into agent configuration `{t}`"))
             elif not cfg.outside_allowed(t):
                 out.append(Finding("medium", "write-outside", f"redirects output outside the project: `{t}`"))
-        elif cfg.zone_of(rel) in {"red", "protected"}:
+        elif cfg.zone_of(rel) in {"red", "protected", "originals"}:
             out.append(Finding("high", "write-protected", f"redirects output into `{rel}` ({cfg.zone_of(rel)} zone)"))
     if re.search(r"base64\s+(-d|--decode)[^|\n]*\|\s*(sh|bash)", command, re.IGNORECASE):
         out.append(Finding("high", "encoded-exec", "decoded payload piped into a shell"))
     if re.search(r"\bpython3?\b.*\s-c\s", command) and PY_DELETE.search(command):
         out.append(Finding("medium", "delete-redirect", "python one-liner deletes files — use `cli.py trash`"))
+    return out
+
+
+def _only_help(command: str, segments: list[list[str]]) -> bool:
+    """`cli.py trust --help` only prints argparse help and exits before any command runs (ADR-0010 C).
+    True when EVERY segment that names a human-only subcommand carries a help flag as its own token.
+    Unparsed commands and commands nested in quotes (`bash -c "…"`) never count as help-only: fail closed."""
+    if not segments:
+        return False
+    hits = [seg for seg in segments if OUTRIGGER_HUMAN_ONLY.search(" ".join(seg))]
+    if not hits or len(hits) != len(OUTRIGGER_HUMAN_ONLY.findall(command)):
+        return False
+    return all(any(t.lower() in HELP_FLAGS for t in seg) and
+               all(not OUTRIGGER_HUMAN_ONLY.search(t) for t in seg) for seg in hits)
+
+
+def _write_targets(head: str, args: list[str]) -> list[str]:
+    """Paths a write-like command changes. Unknown shapes return every non-flag argument (fail closed)."""
+    pos = [a for a in args if not a.startswith("-")]
+    low = [a.lower() for a in args]
+    if head in MOVE_LIKE or head in WRITE_ALL:
+        return pos
+    if head == "robocopy":
+        return pos[1:2]
+    for flag in ("-t", "--target-directory", "-destination"):
+        if flag in low and low.index(flag) + 1 < len(args):
+            return [args[low.index(flag) + 1]]
+    return pos[-1:]
+
+
+def _guarded_writes(head: str, args: list[str], cfg: Config, cwd: Path) -> list[Finding]:
+    if head == "sed" and not any(a == "-i" or a.startswith("-i") or a == "--in-place" for a in args):
+        return []
+    if head not in MOVE_LIKE | COPY_LIKE | WRITE_ALL | {"sed"}:
+        return []
+    out = []
+    for t in _write_targets(head, args) if head != "sed" else [a for a in args if not a.startswith("-")]:
+        rel = cfg.rel(_as_path(t, cwd))
+        if rel is not None and cfg.zone_of(rel) in {"protected", "originals"}:
+            out.append(Finding("high", "write-protected", f"`{head}` changes `{rel}` ({cfg.zone_of(rel)} zone)"))
     return out
 
 
@@ -157,6 +205,7 @@ def check_segment(seg: list[str], cfg: Config, cwd: Path, depth: int = 0) -> lis
         rel = cfg.rel(a, cwd)
         if rel is not None and cfg.zone_of(rel) == "red":
             out.append(Finding("high", "secret", f"touches a secret file: {rel}"))
+    out.extend(_guarded_writes(head, args, cfg, cwd))
 
     if head in SYSTEM_HIGH:
         out.append(Finding("high", "system", f"`{head}` changes the system, raises privilege or runs hidden code"))
@@ -273,6 +322,8 @@ def _net(head: str, args: list[str], low: list[str], cfg: Config) -> Finding:
 
 def _outrigger_cli(args: list[str], cfg: Config, cwd: Path) -> list[Finding]:
     sub = args[1].lower() if len(args) > 1 else ""
+    if any(a.lower() in HELP_FLAGS for a in args[1:]):   # argparse prints help and exits before running (ADR-0010 C)
+        return []
     if sub in {"approve", "resume", "empty-trash", "deny", "trust", "untrust"}:
         return [Finding("high", "self-approval", f"`{sub}` is human-only")]
     if sub in {"trash", "archive"}:
@@ -322,6 +373,7 @@ def _pack_target(pack, seg: list[str], low: list[str], cfg: Config, cwd: Path, e
     Outrigger's own engine is trusted (it is protected from edits). Modules run with `-m` are not scanned:
     that is a documented limit (R-07 in docs/RISK_REGISTER.md)."""
     hits: list[str] = []
+    notes: list[Finding] = []
     for i, flag in enumerate(low):  # `low` is seg[1:] lower-cased, so the code follows at seg[i + 2]
         if flag in {"-c", "-e", "--eval", "-p", "--print"} and i + 2 < len(seg):
             hits += [f"<{flag}>: {s}" for _, s in packs.scan_text(seg[i + 2], pack, ext)]
@@ -338,11 +390,24 @@ def _pack_target(pack, seg: list[str], low: list[str], cfg: Config, cwd: Path, e
             text = p.read_text(encoding="utf-8", errors="replace")
         except OSError:
             return [Finding("medium", "pack-unreadable", f"cannot read `{a}` to check it")]
+        # 0.3.1 (ADR-0010 B): a trusted script that was edited asks again only for dangerous lines it did not have
+        # when the human trusted it. Light mode only; strict keeps whole-file hashing. The snapshot holds the full
+        # text of each dangerous line, so changing the ARGUMENT of an old call (`os.remove(a)` → `os.remove(b)`)
+        # is a new line and asks. Not caught: changing a variable on another line that an old call uses (R-25).
+        snap = state.trusted_danger(cfg, rel) if (rel is not None and cfg.light) else None
+        if snap is not None:
+            new = packs.new_danger_lines(text, pack, p.suffix.lower(), snap)
+            if not new:
+                notes.append(Finding("low", "trusted-drift",
+                                     f"{rel} changed since it was trusted but adds no dangerous line (diff-scoped trust)"))
+                continue
+            hits += [f"{rel}:{n}: new since trust: {s}" for n, s in new]
+            continue
         hits += [f"{rel or a}:{n}: {s}" for n, s in packs.scan_text(text, pack, p.suffix.lower())]
     if hits:
         shown = "; ".join(hits[:8]) + (f"; … +{len(hits) - 8} more" if len(hits) > 8 else "")
-        return [Finding("medium", "pack-danger", f"{pack.name} script contains dangerous calls: {shown}")]
-    return []
+        return notes + [Finding("medium", "pack-danger", f"{pack.name} script contains dangerous calls: {shown}")]
+    return notes
 
 
 # ---------------------------------------------------------------------------------------------

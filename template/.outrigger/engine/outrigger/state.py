@@ -260,11 +260,22 @@ def _save_trusted(cfg: Config, data: dict) -> None:
     _trusted_file(cfg).write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def trust(cfg: Config, rel: str) -> str:
+def trust(cfg: Config, rel: str, danger: list[str] | None = None) -> str:
+    """Record the file's hash and, from 0.3.1, the dangerous lines the human saw (ADR-0010 B).
+    Entries written by 0.3.0 are a bare hash string; they keep working as hash-only trust."""
     data = trusted(cfg)
-    data[rel] = _sha(cfg.root / rel)
+    sha = _sha(cfg.root / rel)
+    data[rel] = sha if danger is None else {"sha": sha, "danger": list(danger)}
     _save_trusted(cfg, data)
-    return data[rel]
+    return sha
+
+
+def trusted_danger(cfg: Config, rel: str) -> list[str] | None:
+    """The dangerous-line snapshot taken at trust time, or None (not trusted, or a 0.3.0 hash-only entry)."""
+    entry = trusted(cfg).get(rel)
+    if isinstance(entry, dict) and isinstance(entry.get("danger"), list):
+        return [str(x) for x in entry["danger"]]
+    return None
 
 
 def untrust(cfg: Config, rel: str) -> bool:
@@ -277,5 +288,7 @@ def untrust(cfg: Config, rel: str) -> bool:
 def is_trusted(cfg: Config, rel: str) -> bool:
     """True only while the file is byte-identical to what the human trusted."""
     want = trusted(cfg).get(rel)
+    if isinstance(want, dict):
+        want = want.get("sha")
     f = cfg.root / rel
     return bool(want) and f.is_file() and _sha(f) == want

@@ -428,6 +428,140 @@ class FalsePositives(Project):
         self.assertFalse(self.d("Bash", {"command": "python wrap.py"}).allow)
 
 
+class PurposeNotForm(Project):
+    """ADR-0010: judge what an action does to the thing being protected, on facts the engine sees — not on a list."""
+    MODE = "light"
+
+    def setUp(self):
+        super().setUp()
+        p = self.tmp / ".outrigger" / "outrigger.toml"
+        text = p.read_text(encoding="utf-8").replace(
+            "[zones]\n", '[zones]\noriginals = ["originals/**"]\n', 1)
+        text = text.replace('protected = [\n', 'protected = [\n  "vault/**",\n', 1)
+        p.write_text(text, encoding="utf-8")
+        self.cfg = config.load(self.tmp)
+        (self.tmp / "originals").mkdir()
+        (self.tmp / "originals" / "old.txt").write_text("source", encoding="utf-8")
+
+    def codes(self, d):
+        return [f.code for f in d.findings]
+
+    def w(self, rel, content="x"):
+        return self.d("Write", {"file_path": str(self.tmp / rel), "content": content})
+
+    # --- A: append-only originals zone ---
+    def test_new_original_is_allowed_and_logged(self):
+        d = self.w("originals/new.txt", "pasted transcript")
+        self.assertTrue(d.allow)
+        self.assertIn("original-added", self.codes(d))
+
+    def test_overwriting_an_original_is_high(self):
+        d = self.w("originals/old.txt")
+        self.assertEqual((d.allow, d.risk), (False, "high"))
+        self.assertIn("original-protected", self.codes(d))
+
+    def test_editing_an_original_is_high_even_if_missing(self):
+        for rel in ("originals/old.txt", "originals/missing.txt"):
+            d = self.d("Edit", {"file_path": str(self.tmp / rel), "old_string": "a", "new_string": "b"})
+            self.assertEqual(d.risk, "high", rel)
+
+    def test_case_variant_of_existing_original_is_high_where_fs_ignores_case(self):
+        if not (self.tmp / "originals" / "OLD.TXT").exists():
+            self.skipTest("case-sensitive file system: OLD.TXT is a different file")
+        self.assertEqual(self.w("originals/OLD.TXT").risk, "high")
+
+    def test_apply_patch_add_new_ok_update_high(self):
+        new = str(self.tmp / "originals" / "p.txt")
+        self.assertTrue(self.d("apply_patch", {"patch": f"*** Begin Patch\n*** Add File: {new}\n+x\n*** End Patch"}).allow)
+        old = str(self.tmp / "originals" / "old.txt")
+        self.assertEqual(self.d("apply_patch", {"patch": f"*** Update File: {old}\n-a\n+b"}).risk, "high")
+
+    def test_shell_writes_into_originals_are_high(self):   # the cp/mv gap that existed before 0.3.1
+        for cmd in ("cp notes.txt originals/old.txt", "cp notes.txt originals/brand-new.txt",
+                    "mv originals/old.txt sandbox/", "echo x > originals/new.txt", "sed -i s/a/b/ originals/old.txt",
+                    "cd originals && cp ../notes.txt copy.txt", "tee originals/log.txt", "touch originals/old.txt",
+                    "cp -t originals notes.txt"):
+            d = self.d("Bash", {"command": cmd})
+            self.assertEqual((d.allow, d.risk), (False, "high"), cmd)
+
+    def test_reading_or_copying_out_of_originals_passes(self):
+        for cmd in ("cat originals/old.txt", "cp originals/old.txt sandbox/old.txt", "sed s/a/b/ originals/old.txt"):
+            self.assertTrue(self.d("Bash", {"command": cmd}).allow, cmd)
+
+    def test_shell_writes_into_protected_are_high(self):
+        self.assertEqual(self.d("Bash", {"command": "cp x vault/a.txt"}).risk, "high")
+
+    # --- C: block codes and help ---
+    def test_owner_protected_path_has_its_own_code(self):
+        self.assertIn("protected-path", self.codes(self.w("vault/a.txt")))
+        self.assertIn("outrigger-self", self.codes(self.w(".outrigger/rules/gates.md")))
+
+    def test_help_of_human_only_command_passes(self):
+        for cmd in ("python .outrigger/engine/cli.py trust --help", "python .outrigger/engine/cli.py approve -h"):
+            self.assertTrue(self.d("Bash", {"command": cmd}).allow, cmd)
+
+    def test_help_does_not_cover_a_real_call(self):
+        for cmd in ("python .outrigger/engine/cli.py trust --help && python .outrigger/engine/cli.py trust x.py --yes",
+                    'python .outrigger/engine/cli.py trust "x.py --help" --yes',   # help inside a quoted path
+                    "python .outrigger/engine/cli.py trust x.py --yes"):
+            self.assertEqual(self.d("Bash", {"command": cmd}).risk, "high", cmd)
+
+    def test_diff_of_engine_is_read_only(self):
+        d = self.d("Bash", {"command": "diff -rq .outrigger/engine ../other/.outrigger/engine"})
+        self.assertNotIn("outrigger-self", self.codes(d))
+
+    # --- B: diff-scoped trust ---
+    def trusted_script(self, body):
+        f = self.tmp / "tool.py"
+        f.write_text(body, encoding="utf-8")
+        pack = next(p for p in self.cfg.packs if ".py" in p.scan_extensions)
+        state.trust(self.cfg, "tool.py", [l for _, l in packs.danger_lines(body, pack, ".py")])
+        return f
+
+    BODY = "import os\nfor p in targets():\n    os.remove(p)\n"
+
+    def run_tool(self):
+        return self.d("Bash", {"command": "python tool.py"})
+
+    def test_edit_without_new_danger_keeps_trust(self):
+        f = self.trusted_script(self.BODY)
+        f.write_text(self.BODY + "print('done')\n", encoding="utf-8")
+        d = self.run_tool()
+        self.assertTrue(d.allow)
+        self.assertIn("trusted-drift", self.codes(d))
+
+    def test_new_dangerous_line_asks(self):
+        f = self.trusted_script(self.BODY)
+        f.write_text(self.BODY + "import shutil\nshutil.rmtree('data')\n", encoding="utf-8")
+        d = self.run_tool()
+        self.assertFalse(d.allow)
+        self.assertIn("new since trust", d.findings[-1].reason)
+
+    def test_changed_argument_of_old_call_asks(self):
+        f = self.trusted_script(self.BODY)
+        f.write_text(self.BODY.replace("os.remove(p)", "os.remove('/')"), encoding="utf-8")
+        self.assertFalse(self.run_tool().allow)
+
+    def test_duplicated_old_call_asks(self):
+        f = self.trusted_script(self.BODY)
+        f.write_text(self.BODY + "    os.remove(p)\n", encoding="utf-8")
+        self.assertFalse(self.run_tool().allow)
+
+    def test_hash_only_trust_from_030_still_asks_after_edit(self):
+        f = self.tmp / "tool.py"
+        f.write_text(self.BODY, encoding="utf-8")
+        state.trust(self.cfg, "tool.py")            # 0.3.0 shape: bare hash
+        self.assertTrue(self.run_tool().allow)
+        f.write_text(self.BODY + "print(1)\n", encoding="utf-8")
+        self.assertFalse(self.run_tool().allow)
+
+    def test_strict_mode_keeps_whole_file_hash(self):
+        f = self.trusted_script(self.BODY)
+        self.set_mode("strict")
+        f.write_text(self.BODY + "print('done')\n", encoding="utf-8")
+        self.assertFalse(self.run_tool().allow)
+
+
 class Capture(Project):
     """0.3.0: draft a workflow from the trace log, not from memory."""
 

@@ -173,15 +173,19 @@ def cmd_trust(a) -> int:
         if not f.is_file():
             print(f"not a file: {rel}")
             continue
+        danger: list[str] = []
         for p in cfg.packs:
             if f.suffix.lower() in p.scan_extensions:
                 text = f.read_text(encoding="utf-8", errors="replace")
-                for line, snippet in packs.scan_text(text, p, f.suffix.lower()):
-                    print(f"  {rel}:{line}: {snippet}")
+                for line, whole in packs.danger_lines(text, p, f.suffix.lower()):
+                    print(f"  {rel}:{line}: {whole[:100]}")
+                    danger.append(whole)
+        note = ("in light mode a later edit asks again only if it adds a dangerous line"
+                if cfg.light else "any later change removes the trust")
         if not a.yes and sys.stdin.isatty():
-            if input(f"Trust {rel} as it is now (any later change removes the trust)? [y/N] ").strip().lower() != "y":
+            if input(f"Trust {rel} as it is now ({note})? [y/N] ").strip().lower() != "y":
                 continue
-        sha = state.trust(cfg, rel)
+        sha = state.trust(cfg, rel, danger)
         state.log_decision(cfg, {"tool": "cli.trust", "risk": "medium", "decision": "trusted",
                                  "summary": f"{rel} {sha[:12]}"})
         print(f"trusted {rel} ({sha[:12]})")

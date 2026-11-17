@@ -1,6 +1,7 @@
 """Platform-agnostic decision: (tool name, tool input, cwd) -> allow or deny, with side effects listed."""
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from dataclasses import dataclass, field
@@ -48,6 +49,12 @@ LIGHT_STILL_ASK = {
     "git-push", "install",
     "memory-suspicious", "agent-config",
 }
+# Tools that only CREATE a file when it does not exist yet (append-only originals zone, ADR-0010). Edit-style tools
+# always change bytes that are already there, so they are never allowed in that zone.
+CREATE_TOOLS = {"write", "write_file", "create_file"}
+# The guard's own files and the agents' hook settings. Other `protected` entries are paths the owner added
+# (ADR-0010 C: a block there is `protected-path`, not `outrigger-self`, so the message says what is really at stake).
+GUARD_FILES = re.compile(r"^(\.outrigger/|\.claude/settings|\.mcp\.json$|\.codex/|\.agents/|\.cursor/|stop$)", re.IGNORECASE)
 APP_MCP = re.compile(r"open_application|request_access|preview_start|navigate", re.IGNORECASE)
 
 
@@ -115,7 +122,12 @@ def _write_findings(cfg: Config, tool: str, tool_input: dict, cwd: Path) -> tupl
         if zone == "red":
             findings.append(Finding("high", "secret", f"writes a secret file: {rel}"))
         elif zone == "protected":
-            findings.append(Finding("high", "outrigger-self", f"`{rel}` is protected — only the human edits it"))
+            if GUARD_FILES.search(rel):
+                findings.append(Finding("high", "outrigger-self", f"`{rel}` is part of the guard — only the human edits it"))
+            else:
+                findings.append(Finding("high", "protected-path", f"`{rel}` is protected — only the human edits it"))
+        elif zone == "originals":
+            findings.append(_original_write(cfg, tool, tool_input, p, rel))
         elif zone == "yellow":
             to_backup.append(rel)
         # dangerous code being written into a pack file is logged (the headless run will be gated)
@@ -127,6 +139,23 @@ def _write_findings(cfg: Config, tool: str, tool_input: dict, cwd: Path) -> tupl
                     findings.append(Finding("low", "pack-danger-written",
                                             f"{rel} now contains: {', '.join(h[1] for h in hits[:4])}"))
     return findings, to_backup
+
+
+def _original_write(cfg: Config, tool: str, tool_input: dict, path: str, rel: str) -> Finding:
+    """Append-only zone (ADR-0010 A). The test is the purpose of the zone — no byte of an existing original changes —
+    judged on what the engine sees (does the file exist?), never on what the agent says about why it needs to write."""
+    target = cfg.root / rel
+    creates = tool in CREATE_TOOLS
+    if tool == "apply_patch":
+        patch = str(tool_input.get("patch") or tool_input.get("input") or "")
+        creates = re.search(rf"^\*\*\* Add File: {re.escape(path)}\s*$", patch, re.MULTILINE) is not None
+    if creates and not os.path.lexists(target):
+        body = str(tool_input.get("content", "")).encode("utf-8")
+        return Finding("low", "original-added",
+                       f"new file in the append-only zone: {rel} (sha256 {hashlib.sha256(body).hexdigest()[:16]}…)")
+    what = "already exists" if os.path.lexists(target) else "can only be created whole, with a create tool"
+    return Finding("high", "original-protected",
+                   f"`{rel}` {what} in the append-only originals zone — no byte of an original may change")
 
 
 def _read_findings(cfg: Config, tool_input: dict, cwd: Path) -> list[Finding]:
@@ -162,8 +191,12 @@ def decide(cfg: Config, tool: str, tool_input: dict, cwd: Path) -> Decision:
             segments = []
             findings.append(Finding("medium", "unparsed", f"could not parse the command safely ({exc})"))
         findings += rules.check_raw(command, segments, cfg, cwd)
+        cur = cwd   # 0.3.1: follow `cd` so a relative path is judged where it will really be used (ADR-0010)
         for seg in segments:
-            findings += rules.check_segment(seg, cfg, cwd)
+            if seg and rules.base(seg[0]) in rules.CD and len(seg) > 1:
+                cur = rules._as_path(seg[1], cur)
+                continue
+            findings += rules.check_segment(seg, cfg, cur)
     elif short in WRITE_TOOLS:
         f, backups = _write_findings(cfg, short, tool_input, cwd)
         findings += f
