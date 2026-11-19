@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 from . import packs, state
 from .config import Config
-from .shell import WRAPPERS, ParseError, base, split_commands
+from .shell import WRAPPERS, ParseError, base, split_commands, strip_heredocs
 
 RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
 
@@ -141,13 +141,16 @@ def check_raw(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
             out.append(Finding("high", "write-protected", f"redirects output into `{rel}` ({cfg.zone_of(rel)} zone)"))
     if re.search(r"base64\s+(-d|--decode)[^|\n]*\|\s*(sh|bash)", command, re.IGNORECASE):
         out.append(Finding("high", "encoded-exec", "decoded payload piped into a shell"))
-    if re.search(r"\bpython3?\b.*\s-c\s", command) and PY_DELETE.search(command):
-        out.append(Finding("medium", "delete-redirect", "python one-liner deletes files — use `cli.py trash`"))
+    if PY_INLINE.search(command) and PY_DELETE.search(command):   # `-c` and, from 0.3.4, a heredoc fed to python
+        out.append(Finding("medium", "delete-redirect", "inline python deletes files — use `cli.py trash`"))
     return out
 
 
-NESTED_SHELL = re.compile(r"\$\(|`|\beval\b|(?:^|[\s;&|(/\\])(?:" + "|".join(sorted(WRAPPERS))
+PY_INLINE = re.compile(r"\bpython3?(?:\.exe)?\b[^\n|;&]*(?:\s-c\s|<<)", re.IGNORECASE)
+NESTED_SHELL = re.compile(r"\$\(|`|\beval\b|\bsource\b|(?:^|[\s;&|(/\\])(?:" + "|".join(sorted(WRAPPERS))
                           + r")(?:\.exe)?\s", re.IGNORECASE)
+
+
 
 
 def _mask_quotes(command: str) -> str | None:
@@ -174,11 +177,16 @@ def _mask_quotes(command: str) -> str | None:
 
 def _redirect_targets(command: str, segments: list[list[str]]) -> list[str]:
     """Redirect targets outside quotes (FP-7). A quoted string can still run as code when the line holds a nested
-    shell (`bash -c`, `$(…)`, backticks, `eval`) — then every `>` counts, as before."""
-    masked = None if NESTED_SHELL.search(command) else _mask_quotes(command)
+    shell (`bash -c`, `$(…)`, backticks, `eval`) — then every `>` counts, as before.
+    A heredoc body is data for the program reading it (FP-8: `len(x)>2` in `python - <<EOF`), unless a shell reads it:
+    then the nested-shell test above already keeps every `>`."""
+    if NESTED_SHELL.search(command):
+        return REDIRECT_TARGET.findall(command)
+    flat = strip_heredocs(command)
+    masked = _mask_quotes(flat)
     if masked is None:
         return REDIRECT_TARGET.findall(command)
-    return [command[m.start(1):m.end(1)] for m in REDIRECT_TARGET.finditer(masked)]
+    return [flat[m.start(1):m.end(1)] for m in REDIRECT_TARGET.finditer(masked)]
 
 
 def _only_help(command: str, segments: list[list[str]]) -> bool:

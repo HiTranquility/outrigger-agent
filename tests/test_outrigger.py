@@ -14,7 +14,7 @@ TEMPLATE = REPO / "template"
 ENGINE = TEMPLATE / ".outrigger" / "engine"
 sys.path.insert(0, str(ENGINE))
 
-from outrigger import config, packs, state  # noqa: E402
+from outrigger import config, packs, shell, state  # noqa: E402
 from outrigger.decide import decide  # noqa: E402
 from outrigger.shell import split_commands  # noqa: E402
 
@@ -486,6 +486,26 @@ class PurposeNotForm(Project):
         for cmd in ('grep -E "a|>" x > originals/old.txt', 'echo "hi" >> "originals/old.txt"',
                     "echo 'x>y' 2> originals/old.txt", 'grep "a" x >originals/old.txt'):
             self.assertIn("write-protected", self.codes(self.d("Bash", {"command": cmd})), cmd)
+
+    def test_heredoc_body_for_python_is_not_a_redirect(self):   # FP-8, kho OR-081d0b7a
+        cmd = "cd originals && python -X utf8 - <<'EOF'\nx=[1,2,3]\nprint(len(x)>2, \"it's\")\nEOF"
+        d = self.d("Bash", {"command": cmd})
+        self.assertNotIn("write-protected", self.codes(d))
+        self.assertTrue(d.allow)
+
+    def test_redirect_on_heredoc_line_and_shell_heredocs_still_caught(self):
+        for cmd in ("cat <<EOF > originals/old.txt\nhi\nEOF", "bash <<EOF\necho x > originals/old.txt\nEOF",
+                    "cat <<EOF | sh\necho x > originals/old.txt\nEOF"):
+            self.assertIn("write-protected", self.codes(self.d("Bash", {"command": cmd})), cmd)
+
+    def test_heredoc_words_inside_a_quoted_message_are_text(self):   # FP-9, kho OR-908789d1
+        cmd = 'git commit -q -m "python - <<EOF with x\nmore lines" && git log --oneline -1'
+        self.assertEqual(len(shell.split_commands(cmd)), 2)
+        self.assertTrue(self.d("Bash", {"command": cmd}).allow)
+
+    def test_python_heredoc_that_deletes_is_gated(self):   # gap closed in 0.3.4: only `-c` was checked
+        d = self.d("Bash", {"command": "python - <<'EOF'\nimport shutil\nshutil.rmtree('build')\nEOF"})
+        self.assertIn("delete-redirect", self.codes(d))
 
     def test_quoted_gt_counts_inside_nested_shell(self):   # fail closed: quotes there are code
         for cmd in ('bash -c "echo x > originals/old.txt"', 'echo "$(echo x > originals/old.txt)"',

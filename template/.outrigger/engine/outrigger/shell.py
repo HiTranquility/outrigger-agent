@@ -33,18 +33,43 @@ def base(token: str) -> str:
     return name
 
 
+def _unquoted_heredoc(line: str, quote: str | None) -> tuple[re.Match | None, str | None]:
+    """First `<<WORD` on this line that sits outside quotes, and the quote still open at the end of the line.
+    FP-9: `git commit -m "… <<EOF …"` is text, not a heredoc."""
+    i, found = 0, None
+    while i < len(line):
+        c = line[i]
+        if quote is None:
+            if c in "'\"":
+                quote = c
+            elif c == "\\":
+                i += 1
+            elif found is None and line.startswith("<<", i):
+                m = HEREDOC.match(line, i)
+                if m:
+                    found = m
+                    i = m.end()
+                    continue
+        elif c == quote:
+            quote = None
+        elif quote == '"' and c == "\\":
+            i += 1
+        i += 1
+    return found, quote
+
+
 def strip_heredocs(command: str) -> str:
-    lines = command.split("\n")
-    out, terminator = [], None
-    for line in lines:
+    """Drop heredoc bodies. The rest of the opening line stays (`cat <<EOF > file` keeps `> file`)."""
+    out, terminator, quote = [], None, None
+    for line in command.split("\n"):
         if terminator is not None:
             if line.strip() == terminator:
                 terminator = None
             continue
-        m = HEREDOC.search(line)
+        m, quote = _unquoted_heredoc(line, quote)
         if m:
             terminator = m.group(2)
-            line = line[: m.start()]
+            line = line[:m.start()] + line[m.end():]
         out.append(line)
     return "\n".join(out)
 
