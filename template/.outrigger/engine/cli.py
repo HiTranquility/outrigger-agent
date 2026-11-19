@@ -2,7 +2,8 @@
 """Outrigger command line.  python .outrigger/engine/cli.py <command> ...
 
 Agent may use:  status · pending · trash · trash-list · restore · archive · stop · scan · capture · notify-test · selftest
-Human only:     approve · deny · resume · empty-trash · trust · untrust   (the guard blocks the agent from these)
+Human only:     approve · deny · resume · empty-trash · trust · untrust · rule accept   (the guard blocks the agent)
+Anyone:         rule list · rule drop   (dropping a rule only makes the guard stricter)
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from outrigger import __version__, config, notify, packs, state  # noqa: E402
+from outrigger import __version__, config, learn, notify, packs, state  # noqa: E402
 from outrigger.decide import decide  # noqa: E402
 
 
@@ -56,10 +57,53 @@ def cmd_approve(a) -> int:
                     continue
             d = state.approve(cfg, aid, a.minutes)
             state.log_decision(cfg, {"tool": d["tool"], "risk": d["risk"], "decision": "approval-granted", "id": aid,
-                                     "summary": d.get("summary", "")})
+                                     "summary": d.get("summary", ""), "sigs": d.get("sigs")})
             print(f"approved {aid} until {d['expires']}")
         except FileNotFoundError as exc:
             print(exc)
+    for s in learn.suggestions(cfg):   # 0.3.2: the third approval of the same kind of action offers a standing rule
+        if any(aid in s["approvals"] for aid in a.ids):
+            print(f"\nYou have approved this kind of action {s['count']} times: {s['describe']}.\n"
+                  f"To stop being asked for it: python .outrigger/engine/cli.py rule accept {s['id']}")
+    return 0
+
+
+def cmd_rule(a) -> int:
+    """Standing rules learned from approvals (ADR-0011). list/drop: anyone · accept: the human only."""
+    cfg = _cfg()
+    if a.action == "list":
+        act = learn.active(cfg)
+        print("active rules:" if act else "active rules: none")
+        for rid, r in act.items():
+            print(f"  {rid}  {learn.describe(r['code'], r['target'])}  [{r['code']}]  until {r['expires'][:10]}")
+        sugg = learn.suggestions(cfg)
+        print("\nsuggestions:" if sugg else "\nsuggestions: none")
+        for s in sugg:
+            print(f"  {s['id']}  {s['describe']}  [{s['code']}]  approved {s['count']} times")
+        return 0
+    if not a.id:
+        print("say which rule: rule accept L-xxxxxx")
+        return 1
+    if a.action == "drop":
+        print(f"dropped {a.id}" if learn.drop(cfg, a.id) else f"no rule {a.id}")
+        return 0
+    s = next((x for x in learn.suggestions(cfg) if x["id"] == a.id), None)
+    if s is None:
+        print(f"{a.id} is not a current suggestion (see `cli.py rule list`)")
+        return 1
+    print(f"{a.id}: from now on, without asking: {s['describe']}  [{s['code']}]")
+    print(f"You approved it {s['count']} times, e.g.:")
+    for ex in s["examples"]:
+        print(f"  - {ex}")
+    print("High-risk actions are never covered. The rule expires; `rule drop` removes it at once.")
+    if not a.yes and sys.stdin.isatty():
+        if input("Accept this standing rule? [y/N] ").strip().lower() != "y":
+            print("not accepted")
+            return 0
+    r = learn.accept(cfg, a.id)
+    state.log_decision(cfg, {"tool": "cli", "risk": "medium", "decision": "rule-accepted", "id": a.id,
+                             "summary": f"{r['code']} {r['target']} until {r['expires']}"})
+    print(f"accepted {a.id} until {r['expires'][:10]}")
     return 0
 
 
@@ -347,6 +391,8 @@ def main() -> int:
     p = sub.add_parser("trust"); p.add_argument("paths", nargs="+"); p.add_argument("--yes", action="store_true")
     p.set_defaults(fn=cmd_trust)
     p = sub.add_parser("untrust"); p.add_argument("paths", nargs="+"); p.set_defaults(fn=cmd_untrust)
+    p = sub.add_parser("rule"); p.add_argument("action", choices=["list", "accept", "drop"]); p.add_argument("id", nargs="?")
+    p.add_argument("--yes", action="store_true"); p.set_defaults(fn=cmd_rule)
     p = sub.add_parser("capture"); p.add_argument("--title", required=True); p.add_argument("--since")
     p.add_argument("--last", type=int); p.add_argument("--dry", action="store_true"); p.set_defaults(fn=cmd_capture)
     sub.add_parser("notify-test").set_defaults(fn=cmd_notify_test)

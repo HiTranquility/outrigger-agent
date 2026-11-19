@@ -63,6 +63,15 @@ on = ["high"]
 # "strict" (0.2.0 behaviour): every medium risk stops too.
 mode = "light"
 
+[rules]
+# Standing rules learned from YOUR approvals (ADR-0011). When you have approved the same kind of action
+# `suggest_after` times within `window_days`, the guard offers a rule; only you can accept it:
+#   python .outrigger/engine/cli.py rule list      ·  rule accept L-xxxxxx  ·  rule drop L-xxxxxx
+# Only medium risk can become a rule (a site, a package, a push target, a folder to delete from). High risk never.
+suggest_after = 3     # 0 = never offer
+window_days = 30
+ttl_days = 90         # an accepted rule expires; accept it again if you still want it
+
 [models]
 # Tiers, not product names: models and prices change, and each vendor (Claude, Codex, Gemini...) has its own line-up.
 # The agent only SUGGESTS a tier with its options (see .outrigger/rules/models.md); you switch models yourself.

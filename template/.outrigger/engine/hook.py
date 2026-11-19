@@ -19,7 +19,7 @@ if sys.version_info < (3, 11):  # tomllib
     print("OUTRIGGER: Python 3.11+ required — blocking to stay safe.", file=sys.stderr)
     sys.exit(2)
 
-from outrigger import config, notify, state  # noqa: E402
+from outrigger import config, learn, notify, state  # noqa: E402
 from outrigger.decide import decide  # noqa: E402
 
 
@@ -42,13 +42,15 @@ def claude_pre_tool(payload: dict) -> int:
 
     if d.allow:
         if d.findings or d.approved:
-            state.log_decision(cfg, {"tool": tool, "risk": d.risk,
-                                     "decision": "approved" if d.approved else ("allowed-light" if d.light else "allowed"),
-                                     "id": d.approval, "codes": [f.code for f in d.findings], "summary": summary})
+            how = ("approved" if d.approved else "allowed-rule" if d.rules else "allowed-light" if d.light else "allowed")
+            state.log_decision(cfg, {"tool": tool, "risk": d.risk, "decision": how, "id": d.approval,
+                                     "codes": [f.code for f in d.findings], "summary": summary,
+                                     **({"rules": d.rules} if d.rules else {})})
         return 0
 
     state.record_pending(cfg, d.approval, {"tool": tool, "risk": d.risk, "codes": [f.code for f in d.findings],
-                                           "summary": state.redact(summary), "reasons": [f.reason for f in d.findings]})
+                                           "summary": state.redact(summary), "reasons": [f.reason for f in d.findings],
+                                           "sigs": d.sigs})
     sent = notify.send(cfg, d.risk, f"Outrigger: {d.risk.upper()} risk blocked",
                        f"{cfg.project_name}: {d.approval} waits for you") if d.risk == "high" else "skipped"
     state.log_decision(cfg, {"tool": tool, "risk": d.risk, "decision": "blocked", "id": d.approval,
@@ -69,6 +71,14 @@ def session_start(payload: dict) -> int:
     packs = sorted({p.name for p in cfg.packs})
     if packs:
         lines.append("Packs installed: " + ", ".join(packs) + " (workflows in .outrigger/packs/*/workflows/).")
+    try:   # 0.3.2 (ADR-0011): tell the agent, so it tells the user once; only the user can accept
+        sugg = learn.suggestions(cfg)
+    except Exception:  # never break a session over a suggestion
+        sugg = []
+    if sugg:
+        lines.append("Standing-rule suggestions (the user approved these 3+ times; tell them once, never accept yourself): "
+                     + "; ".join(f"{s['id']} = {s['describe']} (x{s['count']})" for s in sugg[:5])
+                     + " — they accept with: python .outrigger/engine/cli.py rule accept <id>")
     print("\n".join(lines))
     return 0
 

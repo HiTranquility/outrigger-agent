@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import packs, rules, state
+from . import learn, packs, rules, state
 from .config import Config
 from .rules import Finding
 from .shell import ParseError, split_commands
@@ -68,6 +68,8 @@ class Decision:
     backups: list[str] = field(default_factory=list)
     apps: list[str] = field(default_factory=list)
     light: bool = False   # allowed only because light mode lets medium risk through (logged, not asked)
+    sigs: list | None = None   # 0.3.2: learnable signature of this action (ADR-0011), None if it can never be learned
+    rules: list[str] = field(default_factory=list)   # standing rules that let it through
 
     def reason(self, cfg: Config) -> str:
         top = [f for f in self.findings if f.risk == self.risk] or self.findings
@@ -176,6 +178,7 @@ def decide(cfg: Config, tool: str, tool_input: dict, cwd: Path) -> Decision:
     findings: list[Finding] = []
     backups: list[str] = []
     is_read = short in READ_TOOLS
+    segments: list[list[str]] = []
 
     if state.stop_file(cfg).exists() and not is_read:
         findings.append(Finding("high", "stop", "STOP file present — all non-read tools are blocked"))
@@ -224,6 +227,10 @@ def decide(cfg: Config, tool: str, tool_input: dict, cwd: Path) -> Decision:
     if risk == "medium" and cfg.light and not any(f.code in LIGHT_STILL_ASK for f in findings):
         return Decision(True, risk, findings, backups=backups, apps=apps, light=True)
     aid = state.approval_id(tool, tool_input)
+    sigs = learn.signatures(cfg, t, short, tool_input, findings, segments, _paths_from(tool_input), cwd)
+    hit = learn.covered(cfg, sigs)
+    if hit:
+        return Decision(True, risk, findings, approval=aid, backups=backups, apps=apps, sigs=sigs, rules=hit)
     if state.consume_approval(cfg, aid):
-        return Decision(True, risk, findings, approval=aid, approved=True, backups=backups, apps=apps)
-    return Decision(False, risk, findings, approval=aid, apps=apps)
+        return Decision(True, risk, findings, approval=aid, approved=True, backups=backups, apps=apps, sigs=sigs)
+    return Decision(False, risk, findings, approval=aid, apps=apps, sigs=sigs)

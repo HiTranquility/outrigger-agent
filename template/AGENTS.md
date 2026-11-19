@@ -63,6 +63,8 @@ Installing any package/extension/MCP/skill = L3: name, version, why, reputation,
   that ends unfinished leaves a HANDOFF; a loss or near miss gets a POSTMORTEM. Templates and paths: `.outrigger/rules/records.md`.
 - A decision with alternatives (including the user's choice at a GATE) → `docs/decisions/ADR-NNNN-*.md`
   from `.outrigger/templates/ADR.md`, written **in the same turn** the user decides.
+- Session start lists **standing-rule suggestions** (the user approved the same kind of action 3+ times)? Tell the
+  user once, with the line they can run: `cli.py rule accept L-…`. Never accept one yourself, never argue for it.
 - Finished something **no workflow matched**? Ask once: *"Record this as a workflow?"* If yes, draft it with
   `cli.py capture --title "…" --since <start>` (built from the guard's trace log, not memory) — `.outrigger/rules/records.md`.
 - A workflow you draft goes to `.outrigger/local/workflows/drafts/` with `status: draft`; only the user promotes it.

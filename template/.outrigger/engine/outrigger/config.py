@@ -33,6 +33,8 @@ DEFAULTS: dict = {
     # 0.3.0: "strict" = block high AND medium risk (0.2.0 behaviour, kept for installs that have no [approvals]).
     #        "light"  = block high risk only; medium is logged and shown in the daily summary (ADR-0009).
     "approvals": {"mode": "strict"},
+    # 0.3.2 (ADR-0011): offer a standing rule after this many approvals of the same kind of action; 0 = never offer.
+    "rules": {"suggest_after": 3, "window_days": 30, "ttl_days": 90},
 }
 
 

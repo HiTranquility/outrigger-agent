@@ -608,6 +608,112 @@ class Capture(Project):
         self.assertTrue(list((self.tmp / ".outrigger/state/logs").glob("trace-*.jsonl")))
 
 
+class LearnedRules(Project):
+    """ADR-0011: three approvals of the same kind of medium-risk action offer a standing rule only the human accepts."""
+
+    def human_approves(self, tool, inp):
+        d = self.d(tool, inp)
+        self.assertFalse(d.allow, inp)
+        state.record_pending(self.cfg, d.approval, {"tool": tool, "risk": d.risk, "codes": [f.code for f in d.findings],
+                                                    "summary": json.dumps(inp), "reasons": [], "sigs": d.sigs})
+        g = state.approve(self.cfg, d.approval)
+        state.log_decision(self.cfg, {"tool": tool, "risk": d.risk, "decision": "approval-granted", "id": d.approval,
+                                      "summary": g.get("summary", ""), "sigs": g.get("sigs")})
+        self.assertTrue(self.d(tool, inp).allow)   # the one-time approval is used
+        return d
+
+    def fetch(self, url):
+        return ("WebFetch", {"url": url, "prompt": "x"})
+
+    def test_domain(self):
+        from outrigger import learn
+        self.assertEqual(learn.domain("insights.sei.cmu.edu"), "cmu.edu")
+        self.assertEqual(learn.domain("www.bbc.co.uk"), "bbc.co.uk")
+        self.assertEqual(learn.domain("alice.github.io"), "alice.github.io")   # shared hosting: never the whole suffix
+        self.assertEqual(learn.domain("10.0.0.5"), "10.0.0.5")
+
+    def test_three_approvals_offer_a_rule_and_accepting_it_stops_the_asking(self):
+        from outrigger import learn
+        for u in ("https://insights.sei.cmu.edu/a", "https://www.cmu.edu/b", "https://kilthub.cmu.edu/c"):
+            self.human_approves(*self.fetch(u))
+        sugg = learn.suggestions(self.cfg)
+        self.assertEqual([(s["code"], s["target"], s["count"]) for s in sugg], [("net-unknown", "cmu.edu", 3)])
+        learn.accept(self.cfg, sugg[0]["id"])
+        d = self.d(*self.fetch("https://www.cs.cmu.edu/new"))
+        self.assertEqual((d.allow, d.rules), (True, [sugg[0]["id"]]))
+        self.assertFalse(self.d(*self.fetch("https://cmu.edu.evil.example/x")).allow)   # suffix trick
+        self.assertFalse(self.d(*self.fetch("https://pastebin.com/raw/x")).allow)
+
+    def test_two_approvals_offer_nothing(self):
+        from outrigger import learn
+        for u in ("https://a.example.org/1", "https://b.example.org/2"):
+            self.human_approves(*self.fetch(u))
+        self.assertEqual(learn.suggestions(self.cfg), [])
+
+    def test_same_approval_counts_once(self):
+        from outrigger import learn
+        state.log_decision(self.cfg, {"decision": "approval-granted", "id": "OR-same", "sigs": [["net-unknown", "x.org"]]})
+        state.log_decision(self.cfg, {"decision": "approval-granted", "id": "OR-same", "sigs": [["net-unknown", "x.org"]]})
+        state.log_decision(self.cfg, {"decision": "approval-granted", "id": "OR-same", "sigs": [["net-unknown", "x.org"]]})
+        self.assertEqual(learn.suggestions(self.cfg), [])
+
+    def test_high_risk_and_trusted_scripts_are_never_learnable(self):
+        (self.tmp / "clean.py").write_text("import shutil\nshutil.rmtree('data')\n", encoding="utf-8")
+        for tool, inp in (("Bash", {"command": "rm -rf /"}), ("Bash", {"command": "git push --force origin main"}),
+                          ("Write", {"file_path": str(self.tmp / ".outrigger/outrigger.toml"), "content": ""}),
+                          ("Read", {"file_path": ".env"}), ("Bash", {"command": "python clean.py"})):
+            self.assertIsNone(self.d(tool, inp).sigs, inp)
+
+    def test_forged_log_cannot_make_a_high_risk_rule(self):
+        from outrigger import learn
+        for i in range(3):
+            state.log_decision(self.cfg, {"decision": "approval-granted", "id": f"OR-f{i}",
+                                          "sigs": [["outrigger-self", ".outrigger/outrigger.toml"]]})
+        self.assertEqual(learn.suggestions(self.cfg), [])
+
+    def test_delete_rule_is_one_folder_only(self):
+        from outrigger import learn
+        (self.tmp / "sandbox" / "sub").mkdir(parents=True)
+        for n in ("a", "b", "c"):
+            (self.tmp / "sandbox" / f"{n}.txt").write_text("x", encoding="utf-8")
+            self.human_approves("Bash", {"command": f"rm sandbox/{n}.txt"})
+        s = learn.suggestions(self.cfg)
+        self.assertEqual([(x["code"], x["target"]) for x in s], [("delete-redirect", "sandbox/")])
+        learn.accept(self.cfg, s[0]["id"])
+        self.assertTrue(self.d("Bash", {"command": "rm sandbox/d.txt"}).allow)
+        self.assertFalse(self.d("Bash", {"command": "rm sandbox/sub/e.txt"}).allow)
+        self.assertFalse(self.d("Bash", {"command": "rm notes.txt"}).allow)
+        self.assertFalse(self.d("Bash", {"command": "rm sandbox/d.txt && pip install requests"}).allow)   # every part
+
+    def test_expired_rule_grants_nothing(self):
+        from outrigger import learn
+        for u in ("https://a.example.net/1", "https://b.example.net/2", "https://c.example.net/3"):
+            self.human_approves(*self.fetch(u))
+        rid = learn.suggestions(self.cfg)[0]["id"]
+        learn.accept(self.cfg, rid)
+        data = learn.rules(self.cfg)
+        data[rid]["expires"] = "2000-01-01T00:00:00+00:00"
+        (self.cfg.state_dir / "rules.json").write_text(json.dumps(data), encoding="utf-8")
+        self.assertFalse(self.d(*self.fetch("https://d.example.net/4")).allow)
+
+    def test_agent_cannot_accept_or_write_rules(self):
+        self.assertEqual(self.d("Bash", {"command": "python .outrigger/engine/cli.py rule accept L-abc123"}).risk, "high")
+        self.assertEqual(self.d("Write", {"file_path": str(self.tmp / ".outrigger/state/rules.json"), "content": "{}"}).risk,
+                         "high")
+        self.assertTrue(self.d("Bash", {"command": "python .outrigger/engine/cli.py rule list"}).allow)
+        self.assertTrue(self.d("Bash", {"command": "python .outrigger/engine/cli.py rule drop L-abc123"}).allow)
+
+    def test_session_start_tells_the_agent(self):
+        for u in ("https://a.example.com/1", "https://b.example.com/2", "https://c.example.com/3"):
+            self.human_approves(*self.fetch(u))
+        shutil.rmtree(self.tmp / ".outrigger" / "engine")
+        shutil.copytree(ENGINE, self.tmp / ".outrigger" / "engine")
+        r = subprocess.run([sys.executable, "-X", "utf8", str(self.tmp / ".outrigger/engine/hook.py"), "claude", "session-start"],
+                           input=json.dumps({"cwd": str(self.tmp)}), capture_output=True, text=True, encoding="utf-8")
+        self.assertIn("Standing-rule suggestions", r.stdout)
+        self.assertIn("example.com", r.stdout)
+
+
 class SelfTest(Project):
     """`cli.py selftest` must pass in a fresh project, in light mode, with every strict AND light case."""
 

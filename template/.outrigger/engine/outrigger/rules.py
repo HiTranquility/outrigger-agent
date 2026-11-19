@@ -56,7 +56,8 @@ APPS = {"start", "start-process", "saps", "explorer", "invoke-item", "ii", "code
 UPLOAD_FLAGS = {"-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "-f", "--form", "-t",
                 "--upload-file", "--post-data", "--post-file", "-body", "-infile"}
 UPLOAD_METHODS = {"post", "put", "patch", "delete"}
-OUTRIGGER_HUMAN_ONLY = re.compile(r"cli\.py[\"']?\s+(?:-\S+\s+)*(approve|resume|empty-trash|deny|trust|untrust)\b", re.IGNORECASE)
+OUTRIGGER_HUMAN_ONLY = re.compile(r"cli\.py[\"']?\s+(?:-\S+\s+)*(approve|resume|empty-trash|deny|trust|untrust|rule\s+accept)\b",
+                                  re.IGNORECASE)
 OUTRIGGER_SELF = re.compile(r"\.outrigger[\\/](engine|state|outrigger\.toml|local[\\/]notify\.toml)|\.claude[\\/]settings"
                        r"|\.mcp\.json|\.codex[\\/]|\.agents[\\/]hooks\.json|\.cursor[\\/]hooks\.json", re.IGNORECASE)
 PIPE_TO_SHELL = re.compile(r"(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^|\n]*\|\s*"
@@ -326,6 +327,8 @@ def _outrigger_cli(args: list[str], cfg: Config, cwd: Path) -> list[Finding]:
         return []
     if sub in {"approve", "resume", "empty-trash", "deny", "trust", "untrust"}:
         return [Finding("high", "self-approval", f"`{sub}` is human-only")]
+    if sub == "rule" and len(args) > 2 and args[2].lower() == "accept":   # 0.3.2 (ADR-0011)
+        return [Finding("high", "self-approval", "`rule accept` is human-only — a standing rule is a standing approval")]
     if sub in {"trash", "archive"}:
         paths = [a for a in args[2:] if not a.startswith("-")]
         if "--reason" in args:

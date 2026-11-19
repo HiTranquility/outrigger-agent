@@ -7,7 +7,7 @@ An outrigger is the float lashed beside a canoe: it lets a narrow, fast hull tak
 Outrigger does the same for AI coding agents that people run with **bypass all permissions**: the agent keeps its
 speed, and the human keeps the helm.
 
-> **Status: 0.3.0, early.** Enforcement works on Claude Code today. Codex, Antigravity/Gemini and Cursor read the
+> **Status: 0.3.2, early.** Enforcement works on Claude Code today. Codex, Antigravity/Gemini and Cursor read the
 > rules but are not yet enforced by a hook (adapters planned). Read [Honest limits](#honest-limits) before relying on it.
 
 ## What it does
@@ -73,6 +73,7 @@ python .outrigger/engine/cli.py approve OR-3f9a1c2e
 | `approve OR-…` · `deny OR-…` | **you only** | one use, exact input, 30 minutes |
 | `trash <path> --reason "…"` · `restore <id>` · `archive <path>` | anyone | soft delete, undo, long-term archive |
 | `trust <file>` · `untrust <file>` | **you only** | stop asking about a script you reviewed — until one byte of it changes |
+| `rule list` · `rule drop L-…` / `rule accept L-…` | anyone / **you only** | after you approve the same kind of medium-risk action 3 times, accept it as a standing rule (90 days); high risk never |
 | `stop "reason"` / `resume` | anyone / **you only** | emergency brake: block every write |
 | `empty-trash` | **you only** | hard delete, typed confirmation |
 | `capture --title "…" --since <time>` | anyone | draft a workflow from the trace log into `local/workflows/drafts/` (`--dry` to preview) |
