@@ -503,6 +503,22 @@ class PurposeNotForm(Project):
         self.assertEqual(len(shell.split_commands(cmd)), 2)
         self.assertTrue(self.d("Bash", {"command": cmd}).allow)
 
+    def test_escaped_backtick_in_double_quotes_is_text(self):   # FP-10
+        cmd = 'grep -rl "tác-giả-đọc: \\`chưa\\`" TRI_THUC --include=*.md | grep -v "_META\\|_backup" | wc -l'
+        self.assertEqual(shell.substitutions(cmd), [])
+        self.assertEqual(len(shell.split_commands(cmd)), 3)
+
+    def test_paren_inside_quotes_does_not_close_substitution(self):   # FP-11
+        cmd = 'for p in $(grep -rhoE "docs/[^)>]*" x.md | sort -u); do echo "$p"; done'
+        self.assertEqual(shell.substitutions(cmd), ['grep -rhoE "docs/[^)>]*" x.md | sort -u'])
+        shell.split_commands(cmd)   # must not raise
+
+    def test_substitutions_still_found_where_bash_runs_them(self):
+        self.assertEqual(shell.substitutions('echo "$(rm -rf x)" `id` \'$(not run)\''), ["rm -rf x", "id"])
+        with self.assertRaises(shell.ParseError):
+            shell.split_commands("echo $(rm -rf x")
+        self.assertFalse(self.d("Bash", {"command": 'echo "today: $(rm -rf originals)"'}).allow)
+
     def test_python_heredoc_that_deletes_is_gated(self):   # gap closed in 0.3.4: only `-c` was checked
         d = self.d("Bash", {"command": "python - <<'EOF'\nimport shutil\nshutil.rmtree('build')\nEOF"})
         self.assertIn("delete-redirect", self.codes(d))

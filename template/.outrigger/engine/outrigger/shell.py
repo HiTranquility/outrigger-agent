@@ -113,14 +113,68 @@ def _clean(segment: list[str]) -> list[str]:
     return out
 
 
+def _close_paren(command: str, j: int) -> int:
+    """Index of the `)` closing a `$(` whose body starts at j; quotes inside the body are honoured (FP-11)."""
+    depth, quote = 1, None
+    while j < len(command):
+        ch = command[j]
+        if quote == "'":
+            if ch == "'":
+                quote = None
+        elif ch == "\\":
+            j += 1
+        elif ch == '"':
+            quote = None if quote == '"' else '"'
+        elif quote is None and ch == "'":
+            quote = "'"
+        elif quote is None and ch == "(":
+            depth += 1
+        elif quote is None and ch == ")":
+            depth -= 1
+            if depth == 0:
+                return j
+        j += 1
+    raise ParseError("unclosed $(")
+
+
+def substitutions(command: str) -> list[str]:
+    """Bodies of `$(…)` and `` `…` `` that bash would run. Nothing inside '…' runs; an escaped backtick `` \\` ``
+    is a literal character (FP-10); a `)` inside quotes does not close `$(` (FP-11). Unclosed → ParseError."""
+    out, quote, i = [], None, 0
+    while i < len(command):
+        c = command[i]
+        if quote == "'":
+            if c == "'":
+                quote = None
+        elif c == "\\":
+            i += 1
+        elif quote is None and c == "'":
+            quote = "'"
+        elif c == '"':
+            quote = None if quote == '"' else '"'
+        elif command.startswith("$(", i):
+            j = _close_paren(command, i + 2)
+            out.append(command[i + 2:j])
+            i = j
+        elif c == "`":
+            j = i + 1
+            while j < len(command) and command[j] != "`":
+                j += 2 if command[j] == "\\" else 1
+            if j >= len(command):
+                raise ParseError("unclosed backtick")
+            out.append(command[i + 1:j])
+            i = j
+        i += 1
+    return out
+
+
 def split_commands(command: str, posix: bool = True, depth: int = 0) -> list[list[str]]:
     """Return a list of simple commands. Nested `bash -c "..."`, `$(...)` and backticks are expanded."""
     if depth > 4:
         raise ParseError("nesting too deep")
     command = strip_heredocs(command)
     nested: list[list[str]] = []
-    for m in SUBST.finditer(command):
-        inner = m.group(1) if m.group(1) is not None else m.group(2)
+    for inner in substitutions(command) if posix else [m.group(1) or m.group(2) or "" for m in SUBST.finditer(command)]:
         nested.extend(split_commands(inner, posix, depth + 1))
     segments: list[list[str]] = []
     current: list[str] = []
