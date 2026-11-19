@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 from . import packs, state
 from .config import Config
-from .shell import ParseError, base, split_commands
+from .shell import WRAPPERS, ParseError, base, split_commands
 
 RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
 
@@ -127,7 +127,7 @@ def check_raw(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
     hit = _self_hit(command, segments, cfg, cwd)
     if hit:
         out.append(Finding("high", "outrigger-self", f"command touches Outrigger or hook configuration ({hit})"))
-    for t in REDIRECT_TARGET.findall(command):
+    for t in _redirect_targets(command, segments):
         t = t.strip("\"'")
         if t.lower() in {"/dev/null", "nul", "&1", "&2"}:
             continue
@@ -144,6 +144,41 @@ def check_raw(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
     if re.search(r"\bpython3?\b.*\s-c\s", command) and PY_DELETE.search(command):
         out.append(Finding("medium", "delete-redirect", "python one-liner deletes files — use `cli.py trash`"))
     return out
+
+
+NESTED_SHELL = re.compile(r"\$\(|`|\beval\b|(?:^|[\s;&|(/\\])(?:" + "|".join(sorted(WRAPPERS))
+                          + r")(?:\.exe)?\s", re.IGNORECASE)
+
+
+def _mask_quotes(command: str) -> str | None:
+    """Same-length copy with the inside of '…' and "…" blanked, so a `>` in a quoted grep pattern is not a redirect.
+    None when quotes do not balance (caller fails closed)."""
+    out, quote, i = list(command), None, 0
+    while i < len(command):
+        c = command[i]
+        if quote is None:
+            if c in "'\"":
+                quote = c
+            elif c == "\\":
+                i += 1
+        elif c == quote:
+            quote = None
+        elif quote == '"' and c == "\\" and i + 1 < len(command):
+            out[i] = out[i + 1] = "_"
+            i += 1
+        else:
+            out[i] = "_"
+        i += 1
+    return None if quote else "".join(out)
+
+
+def _redirect_targets(command: str, segments: list[list[str]]) -> list[str]:
+    """Redirect targets outside quotes (FP-7). A quoted string can still run as code when the line holds a nested
+    shell (`bash -c`, `$(…)`, backticks, `eval`) — then every `>` counts, as before."""
+    masked = None if NESTED_SHELL.search(command) else _mask_quotes(command)
+    if masked is None:
+        return REDIRECT_TARGET.findall(command)
+    return [command[m.start(1):m.end(1)] for m in REDIRECT_TARGET.finditer(masked)]
 
 
 def _only_help(command: str, segments: list[list[str]]) -> bool:

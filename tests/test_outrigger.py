@@ -476,6 +476,23 @@ class PurposeNotForm(Project):
         old = str(self.tmp / "originals" / "old.txt")
         self.assertEqual(self.d("apply_patch", {"patch": f"*** Update File: {old}\n-a\n+b"}).risk, "high")
 
+    def test_gt_inside_quoted_pattern_is_not_a_redirect(self):   # FP-7, kho OR-c8d8a74b
+        cmd = f'cd "{self.tmp / "originals"}"; head -c 50 old.txt; grep -ciE "^(user|me|>)" old.txt'
+        d = self.d("Bash", {"command": cmd})
+        self.assertNotIn("write-protected", self.codes(d))
+        self.assertTrue(d.allow)
+
+    def test_real_redirects_still_caught_next_to_quotes(self):
+        for cmd in ('grep -E "a|>" x > originals/old.txt', 'echo "hi" >> "originals/old.txt"',
+                    "echo 'x>y' 2> originals/old.txt", 'grep "a" x >originals/old.txt'):
+            self.assertIn("write-protected", self.codes(self.d("Bash", {"command": cmd})), cmd)
+
+    def test_quoted_gt_counts_inside_nested_shell(self):   # fail closed: quotes there are code
+        for cmd in ('bash -c "echo x > originals/old.txt"', 'echo "$(echo x > originals/old.txt)"',
+                    'eval "echo x > originals/old.txt"', 'echo "unbalanced > originals/old.txt'):
+            d = self.d("Bash", {"command": cmd})
+            self.assertFalse(d.allow, cmd)
+
     def test_shell_writes_into_originals_are_high(self):   # the cp/mv gap that existed before 0.3.1
         for cmd in ("cp notes.txt originals/old.txt", "cp notes.txt originals/brand-new.txt",
                     "mv originals/old.txt sandbox/", "echo x > originals/new.txt", "sed -i s/a/b/ originals/old.txt",
