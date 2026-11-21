@@ -19,8 +19,8 @@ nên đã đổi. Lý do và kết quả tra tên nằm ở [ADR-0008](adr/0008-
 
 ## 1. Điền chỗ còn trống
 
-- [ ] `NOTICE`: thay `[COPYRIGHT OWNER …]` bằng tên chủ bản quyền.
-- [ ] `README.md`: thay `<you>/<repo>` trong lệnh `git clone`.
+- [x] `NOTICE`: chủ bản quyền = HiTranquility (2026-11-21).
+- [x] `README.md`: lệnh clone trỏ tới `HiTranquility/outrigger-agent` (2026-11-21).
 - [ ] Repo trả phí: `LICENSE-COMMERCIAL.md` còn các ô `[…]` và **phải được luật sư xem** trước khi bán.
 
 ## 2. Kiểm lần cuối trên máy
@@ -29,9 +29,10 @@ nên đã đổi. Lý do và kết quả tra tên nằm ở [ADR-0008](adr/0008-
 python -X utf8 -m unittest discover -s tests
 ```
 
-- [ ] 72 test qua.
+- [x] 155 test qua (0.4.1, 2026-11-21).
 - [ ] **Kiểm tra sống ở chế độ bypass** trong một project đã cài (README, mục Install). Chưa làm bước này thì
-      chưa được viết "chặn được khi bypass" ở bất cứ đâu.
+      chưa được viết "chặn được khi bypass" ở bất cứ đâu. **Đã đẩy lên khi bước này chưa làm** (quyết định của chủ
+      repo 2026-11-21); README chỉ nói người dùng phải tự kiểm, không tuyên bố đã chặn được.
 - [ ] `python .outrigger/engine/cli.py notify-test` — thử thông báo thật.
 - [ ] Repo trả phí: chạy test MATLAB của demo một lần trên máy có MATLAB.
 
@@ -41,14 +42,15 @@ python -X utf8 -m unittest discover -s tests
 git ls-files | grep -iE "\.env|secret|token|\.pem|\.key|notify\.toml|state/"
 ```
 
-- [ ] Lệnh trên không in ra gì (ngoài file luật có chữ "secret" trong tên, nếu có).
-- [ ] Không có đường dẫn máy cá nhân (`C:\Users\…`) hay email riêng trong file sẽ công khai:
+- [x] Lệnh trên không in ra gì (2026-11-21).
+- [x] (2026-11-21) Không có đường dẫn máy cá nhân (`C:\Users\…`) hay email riêng trong file sẽ công khai:
 
 ```bash
 git grep -n -iE "C:\\\\Users|Downloads/|@gmail" -- . ":!docs/PUBLISHING.vi.md"
 ```
 
-- [ ] Tên tác giả trong lịch sử commit đúng ý bạn (`git log --format="%an <%ae>" | sort -u`). Email trong commit
+- [x] (2026-11-21) Tác giả mọi commit đã đổi sang `179889289+HiTranquility@users.noreply.github.com` trước lần
+      đẩy đầu; lịch sử cũ giữ trong `outrigger-backups/*.bundle` ngoài repo. Tên tác giả trong lịch sử commit đúng ý bạn (`git log --format="%an <%ae>" | sort -u`). Email trong commit
       sẽ **công khai vĩnh viễn**; muốn giấu thì dùng địa chỉ `…@users.noreply.github.com` của GitHub trước khi đẩy.
 
 ## 4. Tạo repo và đẩy

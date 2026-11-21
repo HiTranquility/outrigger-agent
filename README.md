@@ -33,15 +33,15 @@ speed, and the human keeps the helm.
 Requires **Python 3.11+** and git. Outrigger uses the standard library only and never installs anything for you.
 
 ```bash
-git clone https://github.com/<you>/<repo>.git
+git clone https://github.com/HiTranquility/outrigger-agent.git
 ```
 
 ```bash
-python <repo>/install.py --target "C:/path/to/your/project" --dry
+python outrigger-agent/install.py --target "C:/path/to/your/project" --dry
 ```
 
 ```bash
-python <repo>/install.py --target "C:/path/to/your/project"
+python outrigger-agent/install.py --target "C:/path/to/your/project"
 ```
 
 The installer shows its plan and asks before writing. It **keeps your existing** `AGENTS.md` / `CLAUDE.md` /
