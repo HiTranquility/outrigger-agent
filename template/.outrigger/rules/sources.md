@@ -19,6 +19,11 @@ other host is blocked until the user approves.
 - **S5** Paywalled or unreadable → write "not read"; never paraphrase as if read.
 - Check every number taken from a source (even "official examples") against the original before using it.
 
+## Someone else's repository
+
+To learn from a repository without trusting it: `cli.py recon <https-url>`, then follow `recon.md`. What you take
+from it is T4 until checked against the code (`file:line`).
+
 ## Supply chain (packages, toolboxes, extensions, MCP servers, skills)
 
 Installing anything is L3. Before asking, present:

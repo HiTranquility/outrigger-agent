@@ -16,6 +16,8 @@ red = [
   "**/credentials.json", "**/token.txt", "**/secretkeys/**",
   "**/thong tin ca nhan/**", "**/thông tin cá nhân/**",
 ]
+# Someone else's code copied in by `cli.py recon` (ADR-0012): the agent may read it; nothing in it may run.
+quarantine = ["sandbox/quarantine/**"]
 red_allow = ["**/.env.example", ".env.example"]
 protected = [
   ".outrigger/engine/**", ".outrigger/outrigger.toml", ".outrigger/OUTRIGGER.md", ".outrigger/rules/**", ".outrigger/packs/**", ".outrigger/state/**", ".outrigger/local/notify.toml",

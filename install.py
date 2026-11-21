@@ -31,7 +31,7 @@ whatever this file says.
 @.outrigger/OUTRIGGER.md
 {MARK_END}
 """
-GITIGNORE_LINES = [".outrigger/state/", ".outrigger/local/notify.toml", "STOP"]
+GITIGNORE_LINES = [".outrigger/state/", ".outrigger/local/notify.toml", "STOP", "sandbox/quarantine/"]  # 0.4.0: foreign code (ADR-0012)
 NOTIFY_DEFAULT = """# Outrigger notifications (this file is git-ignored; it may hold your ntfy topic).
 # channel = "toast"  -> Windows desktop notification (default, nothing leaves this computer)
 # channel = "ntfy"   -> phone push via ntfy (install the ntfy app, subscribe to the same topic)

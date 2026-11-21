@@ -229,6 +229,75 @@ def _guarded_writes(head: str, args: list[str], cfg: Config, cwd: Path) -> list[
     return out
 
 
+# 0.4.0 (ADR-0012): code in the quarantine zone is someone else's, copied in to be READ. Reading, listing, comparing
+# and `git log` are fine; anything that would run, build, install or serve it is high risk, whatever the wording.
+QUARANTINE_READ = READ_ONLY | CD | {"find", "tree", "sort", "uniq", "cut", "jq", "xxd", "od", "hexdump", "strings",
+                                    "du", "pwd", "realpath", "basename", "dirname", "nl", "tac", "column"}
+QUARANTINE_GIT_READ = {"log", "show", "diff", "status", "rev-parse", "ls-files", "ls-tree", "blame", "grep",
+                       "cat-file", "describe", "shortlog"}
+EXEC_HEADS = WRAPPERS | {"python", "python3", "py", "node", "deno", "bun", "ruby", "perl", "php", "iex",
+                         "invoke-expression", "source", ".", "npx", "pnpx", "java", "dotnet", "go", "cargo", "make",
+                         "cmake", "docker", "docker-compose", "podman", "matlab", "octave", "rscript", "uv", "uvx",
+                         "pipx", "poetry", "xargs"}
+
+
+def quarantine_touch(seg: list[str], cfg: Config, cwd: Path) -> bool:
+    """Does this segment run inside, or name a path inside, the quarantine zone?"""
+    zone = cfg.section("zones").get("quarantine", [])
+    if not zone or not seg:
+        return False
+    from .config import match_any
+    here = cfg.rel(cwd)
+    if here is not None and match_any(here, zone):
+        return True
+    for a in seg:
+        if a.startswith("-") or "://" in a:
+            continue
+        rel = cfg.rel(a.strip("\"'"), cwd)
+        if rel is not None and match_any(rel, zone):
+            return True
+    return False
+
+
+def is_recon(seg: list[str]) -> bool:
+    """`python .outrigger/engine/cli.py recon …` — the one command that may name a quarantined path to scan it."""
+    at = next((i for i, a in enumerate(seg) if base(a) == "cli.py" and OUTRIGGER_CLI.search(a.replace("\\", "/"))), None)
+    return at is not None and len(seg) > at + 1 and seg[at + 1].lower() == "recon"
+
+
+def _git_sub(low: list[str]) -> str:
+    i = 0
+    while i < len(low):
+        if low[i] in {"-c", "--git-dir", "--work-tree"}:   # `low` is lower-cased, so `-C <dir>` arrives as `-c`
+            i += 2
+            continue
+        if low[i].startswith("-"):
+            i += 1
+            continue
+        return low[i]
+    return ""
+
+
+def check_quarantine(seg: list[str], cfg: Config, cwd: Path) -> list[Finding]:
+    if not quarantine_touch(seg, cfg, cwd):
+        return []
+    head = base(seg[0])
+    low = [a.lower() for a in seg[1:]]
+    if head in QUARANTINE_READ or head in DELETE or head in MOVE_LIKE:   # delete/move: the normal rules judge them
+        return []
+    if head == "sed" and not any(a.startswith("-i") or a == "--in-place" for a in low):
+        return []
+    if head == "git" and _git_sub(low) in QUARANTINE_GIT_READ:
+        return []
+    if is_recon(seg):
+        return []
+    if head in COPY_LIKE:
+        return [Finding("medium", "quarantine-copy", "copies code out of the quarantine zone — review it before it "
+                                                     "joins the project")]
+    return [Finding("high", "quarantine-exec", f"`{head}` would run, build or install code from the quarantine zone "
+                                               "— read it, never run it (ADR-0012)")]
+
+
 def check_segment(seg: list[str], cfg: Config, cwd: Path, depth: int = 0) -> list[Finding]:
     if not seg:
         return []
@@ -237,6 +306,8 @@ def check_segment(seg: list[str], cfg: Config, cwd: Path, depth: int = 0) -> lis
     low = [a.lower() for a in args]
     out: list[Finding] = []
 
+    if depth == 0:   # lines inside a quarantined script are not each "run from quarantine": the outer run is judged
+        out.extend(check_quarantine(seg, cfg, cwd))
     out.extend(_script_files(seg, head, cfg, cwd, depth))
     if head in NPM_RUNNERS:
         out.extend(_npm_script(head, args, cfg, cwd, depth))
@@ -372,6 +443,15 @@ def _outrigger_cli(args: list[str], cfg: Config, cwd: Path) -> list[Finding]:
         return [Finding("high", "self-approval", f"`{sub}` is human-only")]
     if sub == "rule" and len(args) > 2 and args[2].lower() == "accept":   # 0.3.2 (ADR-0011)
         return [Finding("high", "self-approval", "`rule accept` is human-only — a standing rule is a standing approval")]
+    if sub == "recon":   # 0.4.0 (ADR-0012): the clone runs inside cli.py, so the hook judges its source here
+        urls = [a for a in args[2:] if "://" in a]
+        if any(not a.lower().startswith("https://") for a in urls):
+            return [Finding("high", "recon-scheme", "recon clones over https only")]
+        hosts = [urlparse(a).hostname or "" for a in urls]
+        bad = [h for h in hosts if not cfg.host_allowed(h)]
+        if bad:
+            return [Finding("medium", "net-unknown", f"recon downloads from `{bad[0]}` — not on the allow-list")]
+        return [Finding("low", "recon", f"recon into quarantine{': ' + hosts[0] if hosts else ''}")]
     if sub in {"trash", "archive"}:
         paths = [a for a in args[2:] if not a.startswith("-")]
         if "--reason" in args:

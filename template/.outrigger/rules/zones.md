@@ -7,6 +7,7 @@ Configured in `.outrigger/outrigger.toml` → `[zones]`. The guard enforces them
 | green | `sandbox/`, `reports/`, `docs/decisions/`, `.outrigger/local/workflows/drafts/` | write freely |
 | yellow | everything else inside the project | write — the guard copies the old file to `.outrigger/state/backups/` first |
 | red | `.env*` (except `.env.example`), keys, certificates, `credentials.json`, `SecretKeys/` | nothing — not even read |
+| quarantine | `sandbox/quarantine/**` (filled by `cli.py recon`) | read, list, `git log`; **never run, build, install or pipe** it (high risk) — `recon.md` |
 | protected | `.outrigger/engine`, `.outrigger/outrigger.toml`, `.outrigger/state`, hook settings, `.mcp.json` | nothing — ask the user to edit |
 | outside the project | anything not under the project root | blocked (medium) unless listed in `outside_allow` |
 

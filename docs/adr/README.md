@@ -15,3 +15,4 @@ Never delete an ADR. To change a decision, write a new ADR and mark the old one 
 | [0009](0009-light-mode-and-workflow-capture.md) | Light mode by default; capture workflows from the trace log (amends 0003) |
 | [0010](0010-judge-purpose-not-form.md) | Judge purpose, not form: append-only originals, diff-scoped trust, fewer form-based blocks (amends 0007) |
 | [0011](0011-standing-rules-learned-from-approvals.md) | Standing rules learned from the human's approvals (accept is human-only) |
+| [0012](0012-recon-quarantine-and-content-check.md) | Recon: read someone else's code in quarantine; check what tools return |

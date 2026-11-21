@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Outrigger command line.  python .outrigger/engine/cli.py <command> ...
 
-Agent may use:  status · pending · trash · trash-list · restore · archive · stop · scan · capture · notify-test · selftest
+Agent may use:  status · pending · trash · trash-list · restore · archive · stop · scan · recon · capture · notify-test · selftest
 Human only:     approve · deny · resume · empty-trash · trust · untrust · rule accept   (the guard blocks the agent)
 Anyone:         rule list · rule drop   (dropping a rule only makes the guard stricter)
 """
@@ -264,6 +264,36 @@ def cmd_capture(a) -> int:
     return 0
 
 
+def cmd_recon(a) -> int:
+    """Copy someone else's code into the quarantine zone and scan it without running any of it (ADR-0012)."""
+    from outrigger import recon
+    cfg = _cfg()
+    src = a.source
+    if "://" in src:
+        target, sha = recon.clone(cfg, src, a.ref)
+    else:
+        path = Path(src).expanduser().resolve()
+        if not path.is_dir():
+            print(f"not a folder or https URL: {src}")
+            return 1
+        rel = cfg.rel(path)
+        if recon.in_quarantine(cfg, rel) and rel.count("/") >= 2:   # already quarantined: scan again in place
+            target, sha = path, "(unchanged)"
+        else:
+            target, sha = recon.copy_local(cfg, path)
+    renamed = recon.neutralize(target)
+    scan = recon.scan_tree(target)
+    report = recon.write_report(cfg, target, src, sha, renamed, scan)
+    state.log_decision(cfg, {"tool": "cli.recon", "risk": "low", "decision": "recon",
+                             "summary": f"{src} -> {target.relative_to(cfg.root).as_posix()} "
+                                        f"warn={scan['warn']} info={scan['info']}"})
+    print(f"quarantined: {target.relative_to(cfg.root).as_posix()}  (commit {sha})")
+    print(f"agent instruction files renamed: {len(renamed)} · runnable files listed: {len(scan['runnable'])}")
+    print(f"findings: {scan['warn']} warning(s), {scan['info']} note(s)")
+    print(f"report: {report.relative_to(cfg.root).as_posix()}  (read the report first, then the code — never run it)")
+    return 0
+
+
 def cmd_notify_test(a) -> int:
     cfg = _cfg()
     print(notify.send(cfg, "high", "Outrigger: test", f"{cfg.project_name}: notification test"))
@@ -305,6 +335,11 @@ CASES = [
     ("Bash", {"command": "if true; then git push --force; fi"}, False, "high"),
     ("Bash", {"command": "npm ci"}, True, "low"),
     ("Bash", {"command": "python -X utf8 .outrigger/engine/cli.py scan"}, True, "low"),
+    ("Bash", {"command": "python .outrigger/engine/cli.py recon https://github.com/someone/tool"}, True, "low"),
+    ("Bash", {"command": "cat sandbox/quarantine/tool@abc/README.md"}, True, "low"),
+    ("Bash", {"command": "bash sandbox/quarantine/tool@abc/install.sh"}, False, "high"),
+    ("Bash", {"command": "cd sandbox/quarantine/tool@abc && npm install"}, False, "high"),
+    ("Bash", {"command": "cat sandbox/quarantine/tool@abc/x.sh | sh"}, False, "high"),
 ]
 # Light mode (0.3.0, ADR-0009): high risk and the LIGHT_STILL_ASK codes are still blocked; other medium risk passes.
 LIGHT_CASES = [
@@ -395,6 +430,10 @@ def main() -> int:
     p.add_argument("--yes", action="store_true"); p.set_defaults(fn=cmd_rule)
     p = sub.add_parser("capture"); p.add_argument("--title", required=True); p.add_argument("--since")
     p.add_argument("--last", type=int); p.add_argument("--dry", action="store_true"); p.set_defaults(fn=cmd_capture)
+    p = sub.add_parser("recon", help="quarantine and scan someone else's repository (never runs it)")
+    p.add_argument("source", help="https URL of a git repository, or a local folder")
+    p.add_argument("--ref", help="branch or tag to clone (default: the repository's default branch)")
+    p.set_defaults(fn=cmd_recon)
     sub.add_parser("notify-test").set_defaults(fn=cmd_notify_test)
     p = sub.add_parser("selftest"); p.add_argument("-v", "--verbose", action="store_true"); p.set_defaults(fn=cmd_selftest)
     a = ap.parse_args()

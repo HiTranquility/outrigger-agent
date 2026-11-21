@@ -7,7 +7,7 @@ An outrigger is the float lashed beside a canoe: it lets a narrow, fast hull tak
 Outrigger does the same for AI coding agents that people run with **bypass all permissions**: the agent keeps its
 speed, and the human keeps the helm.
 
-> **Status: 0.3.5, early.** Enforcement works on Claude Code today. Codex, Antigravity/Gemini and Cursor read the
+> **Status: 0.4.0, early.** Enforcement works on Claude Code today. Codex, Antigravity/Gemini and Cursor read the
 > rules but are not yet enforced by a hook (adapters planned). Read [Honest limits](#honest-limits) before relying on it.
 
 ## What it does
@@ -25,6 +25,7 @@ speed, and the human keeps the helm.
 | 📱 | You are told | High-risk blocks send a desktop notification or a phone push (ntfy) carrying only risk, project and id — never your data |
 | 🪶 | It asks only when it matters | **Light mode** (default from 0.3.0): high risk, untrusted scripts with dangerous calls, deletes, installs and pushes stop and wait; other medium risk runs and is listed in the daily log. `[approvals] mode = "strict"` asks for every medium risk |
 | 🔁 | Your work becomes a workflow | Every call goes to a local trace log. After a task no workflow matched, the agent asks once; `cli.py capture` drafts the workflow from what actually ran, not from memory |
+| 🔬 | Read other people's code without letting it act | `cli.py recon <url>` clones into a quarantine zone with hooks, symlinks and submodules off, renames the files their agents would load (`CLAUDE.md`, `.claude/`…), and reports hidden text and what would run. Running quarantined code is blocked; whatever a read or a web fetch returns is checked for hidden characters and text aimed at the agent |
 | 🧭 | It grows with you | Packs describe a piece of software to the guard (Python and Node.js ship in the core); your own workflows live in `.outrigger/local/` and are never overwritten by updates |
 
 ## Install (2 minutes)
@@ -72,6 +73,7 @@ python .outrigger/engine/cli.py approve OR-3f9a1c2e
 | `status` · `pending` · `scan` | anyone | state, waiting approvals, dangerous calls in pack files |
 | `approve OR-…` · `deny OR-…` | **you only** | one use, exact input, 30 minutes |
 | `trash <path> --reason "…"` · `restore <id>` · `archive <path>` | anyone | soft delete, undo, long-term archive |
+| `recon <https-url \| folder> [--ref tag]` | anyone | copy a repository into `sandbox/quarantine/<name>@<commit>/`, neutralise its agent files, write `reports/recon/…md` |
 | `trust <file>` · `untrust <file>` | **you only** | stop asking about a script you reviewed — until one byte of it changes |
 | `rule list` · `rule drop L-…` / `rule accept L-…` | anyone / **you only** | after you approve the same kind of medium-risk action 3 times, accept it as a standing rule (90 days); high risk never |
 | `stop "reason"` / `resume` | anyone / **you only** | emergency brake: block every write |

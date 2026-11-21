@@ -195,11 +195,21 @@ def decide(cfg: Config, tool: str, tool_input: dict, cwd: Path) -> Decision:
             findings.append(Finding("medium", "unparsed", f"could not parse the command safely ({exc})"))
         findings += rules.check_raw(command, segments, cfg, cwd)
         cur = cwd   # 0.3.1: follow `cd` so a relative path is judged where it will really be used (ADR-0010)
+        touched, runners = False, []
         for seg in segments:
             if seg and rules.base(seg[0]) in rules.CD and len(seg) > 1:
                 cur = rules._as_path(seg[1], cur)
                 continue
             findings += rules.check_segment(seg, cfg, cur)
+            if rules.is_recon(seg):
+                continue
+            touched = touched or rules.quarantine_touch(seg, cfg, cur)
+            if seg and rules.base(seg[0]) in rules.EXEC_HEADS:
+                runners.append(rules.base(seg[0]))
+        # 0.4.0 (ADR-0012): `cat quarantine/x.sh | bash` — the runner names no quarantined path, the pipe feeds it one
+        if touched and runners and not any(f.code == "quarantine-exec" for f in findings):
+            findings.append(Finding("high", "quarantine-exec",
+                                    f"pipes code from the quarantine zone into `{runners[0]}` — read it, never run it"))
     elif short in WRITE_TOOLS:
         f, backups = _write_findings(cfg, short, tool_input, cwd)
         findings += f

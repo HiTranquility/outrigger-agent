@@ -15,6 +15,14 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Read|WebFetch|WebSearch|Bash|PowerShell|Grep|mcp__.*",
+        "hooks": [
+          { "type": "command", "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.outrigger/engine/hook.py\" claude post-tool", "timeout": 15 }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
