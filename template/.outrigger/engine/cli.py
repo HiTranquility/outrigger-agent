@@ -377,14 +377,16 @@ def cmd_selftest(a) -> int:
         (root / ".outrigger" / "local").mkdir()
         (root / ".outrigger" / "local" / "notify.toml").write_text('channel = "none"\n', encoding="utf-8")
         base_cfg = config.load(root)
-        strict = config.Config(root=root, data={**base_cfg.data, "approvals": {"mode": "strict"}}, packs=base_cfg.packs)
-        light = config.Config(root=root, data={**base_cfg.data, "approvals": {"mode": "light"}}, packs=base_cfg.packs)
+        strict = config.Config(root=root, data={**base_cfg.data, "approvals": {"mode": "strict"}}, packs=base_cfg.packs, asks=base_cfg.asks)
+        light = config.Config(root=root, data={**base_cfg.data, "approvals": {"mode": "light"}}, packs=base_cfg.packs, asks=base_cfg.asks)
         cfg = strict
         fails = 0
         cases = [(strict, *c) for c in CASES]
         for pack_id in {p.id for p in cfg.packs}:
             cases += [(strict, *c) for c in PACK_CASES.get(pack_id, [])]
         cases += [(light, *c) for c in LIGHT_CASES]
+        for ask in cfg.asks:   # 0.5.0 (ADR-0014): every pack "always ask" holds in light mode
+            cases.append((light, "Bash", {"command": " ".join(ask.commands[0])}, False, ask.risk))
         for p in cfg.packs:   # 0.4.1 (ADR-0013): a pack that always asks before opening its app, even in light mode
             if p.gui_always_ask and p.commands and not p.always_headless:
                 cases.append((light, "Bash", {"command": p.commands[0]}, False, "high" if p.gui_level == "high" else "medium"))

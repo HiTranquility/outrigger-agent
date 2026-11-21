@@ -17,3 +17,4 @@ Never delete an ADR. To change a decision, write a new ADR and mark the old one 
 | [0011](0011-standing-rules-learned-from-approvals.md) | Standing rules learned from the human's approvals (accept is human-only) |
 | [0012](0012-recon-quarantine-and-content-check.md) | Recon: read someone else's code in quarantine; check what tools return |
 | [0013](0013-pack-gui-always-ask.md) | A pack can make opening its app ask in light mode too (licence seats) — amends 0009 |
+| [0014](0014-pack-ask-commands.md) | A pack can list commands that must always be asked about (`[[ask]]`: schema migrations, data drops) |

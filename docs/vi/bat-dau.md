@@ -95,6 +95,7 @@ Duyệt chỉ có hiệu lực **một lần**, cho **đúng** lệnh đó (đ�
 | 0.3.1 | **Zone `originals`**: file gốc (dữ liệu đo, bản quét, phỏng vấn) chỉ được thêm mới, không sửa một byte | Khai báo thư mục trong `[zones] originals` |
 | 0.3.2 | **Luật thường trực**: duyệt cùng một loại việc 3 lần → guard đề nghị biến thành luật; hết hạn sau 90 ngày; rủi ro cao không bao giờ | `cli.py rule list` · `rule accept L-…` (chỉ bạn) · `rule drop L-…` |
 | 0.4.0 | **Recon**: soi repo của người khác trong vùng cách ly, không chạy gì | Xem mục 7 |
+| 0.5.0 | **Pack khai lệnh luôn phải hỏi** (`[[ask]]` trong `pack.toml`): ví dụ pack Đồ án bắt mọi lệnh áp migration (`dotnet ef database update`, `prisma migrate`, `alembic upgrade`…) phải hỏi kể cả light mode, và lệnh xoá dữ liệu (`docker compose down -v`, `dropdb`…) ở mức cao; không bao giờ thành luật thường trực | Không cần làm gì; có tác dụng khi cài pack có `[[ask]]` |
 | 0.4.1 | **Pack tự đòi hỏi khi mở app**: pack khai `gui_always_ask = true` thì mở app đó (MATLAB, Simulink trong bản Pro) **luôn phải hỏi**, kể cả ở light mode, và không bao giờ thành luật thường trực. Các app khác ở light mode vẫn chỉ ghi log | Không cần làm gì; pack MATLAB Pro 0.2.0 đã bật sẵn |
 
 ## 7. Soi repo của người khác (recon)

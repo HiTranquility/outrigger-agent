@@ -48,9 +48,11 @@ LIGHT_STILL_ASK = {
     "unparsed", "secret-scan-failed",
     "delete-redirect", "bulk", "git-discard",
     "git-push", "install",
+    "pack-ask",  # 0.5.0 (ADR-0014): a command a pack declared must always be asked about (schema migration, DB drop)
     "app-ask",   # 0.4.1 (ADR-0013): a pack declared that opening its app must always ask (licence seats)
     "memory-suspicious", "agent-config",
 }
+PACK_ALWAYS = {"pack-ask", "app-ask"}
 # Tools that only CREATE a file when it does not exist yet (append-only originals zone, ADR-0010). Edit-style tools
 # always change bytes that are already there, so they are never allowed in that zone.
 CREATE_TOOLS = {"write", "write_file", "create_file"}
@@ -236,7 +238,9 @@ def decide(cfg: Config, tool: str, tool_input: dict, cwd: Path) -> Decision:
     apps = [f.app for f in findings if f.app]
     if risk == "low":
         return Decision(True, risk, findings, backups=backups, apps=apps)
-    if risk == "medium" and cfg.light and not any(f.code in LIGHT_STILL_ASK for f in findings):
+    # a pack's "always ask" holds when the command is hidden in a script too (`script:pack-ask`, ADR-0014)
+    if risk == "medium" and cfg.light and not any(f.code in LIGHT_STILL_ASK or f.code.split(":")[-1] in PACK_ALWAYS
+                                                  for f in findings):
         return Decision(True, risk, findings, backups=backups, apps=apps, light=True)
     aid = state.approval_id(tool, tool_input)
     sigs = learn.signatures(cfg, t, short, tool_input, findings, segments, _paths_from(tool_input), cwd)

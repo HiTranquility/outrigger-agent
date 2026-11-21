@@ -55,10 +55,20 @@ class Pack:
 
 
 @dataclass
+class Ask:
+    """0.5.0 (ADR-0014): a command a pack says must always be asked about (a schema migration, dropping a database)."""
+    pack: str
+    commands: list[list[str]]   # each command as lower-case tokens, e.g. ["dotnet", "ef", "database", "update"]
+    reason: str
+    risk: str = "medium"
+
+
+@dataclass
 class Config:
     root: Path
     data: dict
     packs: list[Pack] = field(default_factory=list)
+    asks: list[Ask] = field(default_factory=list)
 
     def section(self, name: str) -> dict:
         return self.data.get(name, {})
@@ -170,7 +180,20 @@ def load(start: Path) -> Config:
     if packs_dir.is_dir():
         for manifest in sorted(packs_dir.glob("*/pack.toml")):
             cfg.packs.extend(_load_pack(manifest))
+            cfg.asks.extend(_load_asks(manifest))
     return cfg
+
+
+def _load_asks(manifest: Path) -> list[Ask]:
+    d = tomllib.loads(manifest.read_text(encoding="utf-8"))
+    name = d.get("pack", {}).get("name", manifest.parent.name)
+    out = []
+    for a in d.get("ask", []):
+        cmds = [c.lower().split() for c in a.get("commands", []) if isinstance(c, str) and c.strip()]
+        risk = "high" if str(a.get("risk", "medium")).lower() == "high" else "medium"   # never lower than medium
+        if cmds:
+            out.append(Ask(pack=name, commands=cmds, reason=str(a.get("reason", "the pack asks before this")), risk=risk))
+    return out
 
 
 def _load_pack(manifest: Path) -> list[Pack]:

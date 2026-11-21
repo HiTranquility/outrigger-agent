@@ -265,6 +265,42 @@ def quarantine_touch(seg: list[str], cfg: Config, cwd: Path) -> bool:
     return False
 
 
+ASK_RUNNERS = {"npx", "pnpx", "bunx", "pnpm", "yarn", "bun", "exec", "dlx", "uv", "uvx", "run", "poetry", "pipenv",
+               "python", "python3", "py", "-m", "bundle", "sudo"}
+
+
+def _ask_matches(toks: list[str], pattern: list[str]) -> bool:
+    """`pattern[0]` is the program, found among the first tokens so that runners (`npx`, `pnpm exec`, `uv run`,
+    `python -m`, `yarn`) do not hide it; the rest must follow in order, other words and flags may sit between."""
+    for start in range(min(4, len(toks))):
+        if toks[start] != pattern[0]:
+            if toks[start] not in ASK_RUNNERS:   # `echo prisma migrate` prints; only a runner may come first
+                return False
+            continue
+        i = start + 1
+        for want in pattern[1:]:
+            while i < len(toks) and toks[i] != want:
+                i += 1
+            if i == len(toks):
+                break
+            i += 1
+        else:
+            return True
+    return False
+
+
+def _pack_asks(seg: list[str], cfg: Config) -> list[Finding]:
+    if not seg or not cfg.asks:
+        return []
+    toks = [base(seg[0])] + [base(t) if i < 3 else t.lower() for i, t in enumerate(seg[1:])]
+    out = []
+    for ask in cfg.asks:
+        hit = next((p for p in ask.commands if _ask_matches(toks, p)), None)
+        if hit:
+            out.append(Finding(ask.risk, "pack-ask", f"{ask.reason} (`{' '.join(hit)}`, {ask.pack} pack: asks every time)"))
+    return out
+
+
 def is_recon(seg: list[str]) -> bool:
     """`python .outrigger/engine/cli.py recon …` — the one command that may name a quarantined path to scan it."""
     at = next((i for i, a in enumerate(seg) if base(a) == "cli.py" and OUTRIGGER_CLI.search(a.replace("\\", "/"))), None)
@@ -312,6 +348,7 @@ def check_segment(seg: list[str], cfg: Config, cwd: Path, depth: int = 0) -> lis
     low = [a.lower() for a in args]
     out: list[Finding] = []
 
+    out.extend(_pack_asks(seg, cfg))   # every depth: `npm run db:migrate` hides `prisma migrate deploy` (ADR-0014)
     if depth == 0:   # lines inside a quarantined script are not each "run from quarantine": the outer run is judged
         out.extend(check_quarantine(seg, cfg, cwd))
     out.extend(_script_files(seg, head, cfg, cwd, depth))
