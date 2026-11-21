@@ -216,6 +216,29 @@ class MatlabPack(Project):
         d = self.d("PowerShell", {"command": "& 'C:\\Program Files\\MATLAB\\R2024b\\bin\\matlab.exe'"})
         self.assertEqual(d.risk, "medium")
 
+    def test_gui_always_ask_holds_in_light_mode(self):
+        """ADR-0013: a pack can say opening its app costs a licence seat; light mode then asks too, and the action is
+        never offered as a standing rule. Without the key, light mode lets the GUI open and logs it (ADR-0009)."""
+        self.add_matlab_pack()
+        self.set_mode("light")
+        self.assertTrue(self.d("Bash", {"command": "matlab"}).allow)          # key absent: logged, not asked
+        p = self.tmp / ".outrigger" / "packs" / "matlab" / "pack.toml"
+        p.write_text(MATLAB_PACK.replace('headless_flags = ["-batch"]',
+                                         'headless_flags = ["-batch"]\ngui_always_ask = true'), encoding="utf-8")
+        self.cfg = config.load(self.tmp)
+        d = self.d("Bash", {"command": "matlab -desktop"})
+        self.assertEqual((d.allow, d.risk, [f.code for f in d.findings]), (False, "medium", ["app-ask"]))
+        self.assertIsNone(d.sigs)                                              # never learnable
+        self.assertEqual(self.d("Bash", {"command": 'matlab -batch "disp(1)"'}).risk, "low")   # headless unchanged
+
+    def test_pro_matlab_pack_declares_gui_always_ask(self):
+        pro = REPO.parent / "outrigger-agent-pro" / "packs" / "matlab" / "pack.toml"
+        if not pro.is_file():
+            self.skipTest("outrigger-agent-pro not checked out next to this repo")
+        import tomllib
+        tools = tomllib.loads(pro.read_text(encoding="utf-8"))["tools"]
+        self.assertTrue(all(t.get("gui_always_ask") for t in tools if t.get("headless_flags") is not None))
+
 
 class PythonPack(Project):
     """R-07: 'write a script, then run it'. The core Python pack scans the script the command runs."""
@@ -864,6 +887,14 @@ class Recon(Project):
             d = self.d("Bash", {"command": cmd})
             self.assertEqual((d.allow, d.risk), (False, "high"), cmd)
             self.assertIn("quarantine-exec", [f.code for f in d.findings], cmd)
+
+    def test_quarantine_path_inside_code_text_is_high(self):
+        """Found with the MATLAB pack: the path is inside the code string, not an argument of its own."""
+        for cmd in (f"matlab -batch \"run('{self.Q}/evil.m')\"", f"python -c \"exec(open('{self.Q}/x.py').read())\"",
+                    f"node -e \"require('./{self.Q}/index.js')\""):
+            d = self.d("Bash", {"command": cmd})
+            self.assertEqual((d.allow, d.risk), (False, "high"), cmd)
+        self.assertEqual(self.d("Bash", {"command": f"grep -rn \"{self.Q}/\" docs"}).risk, "low")
 
     def test_piping_quarantined_code_into_a_runner_is_high(self):
         for cmd in (f"cat {self.Q}/install.sh | bash", f"type {self.Q}\\install.ps1 | iex",

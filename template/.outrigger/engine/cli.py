@@ -385,6 +385,9 @@ def cmd_selftest(a) -> int:
         for pack_id in {p.id for p in cfg.packs}:
             cases += [(strict, *c) for c in PACK_CASES.get(pack_id, [])]
         cases += [(light, *c) for c in LIGHT_CASES]
+        for p in cfg.packs:   # 0.4.1 (ADR-0013): a pack that always asks before opening its app, even in light mode
+            if p.gui_always_ask and p.commands and not p.always_headless:
+                cases.append((light, "Bash", {"command": p.commands[0]}, False, "high" if p.gui_level == "high" else "medium"))
         print(f"approvals mode in this project: {'light' if base_cfg.light else 'strict'}")
         for ccfg, tool, inp, want_allow, want_risk in cases:
             d = decide(ccfg, tool, inp, root)

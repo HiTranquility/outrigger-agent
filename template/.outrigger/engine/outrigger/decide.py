@@ -39,6 +39,7 @@ MEMORY_SUSPICIOUS = re.compile(
 #   cannot read it, fail closed   unparsed · secret-scan-failed
 #   loses work                    delete-redirect · bulk · git-discard
 #   leaves the machine / installs git-push · install
+#   costs a licence seat          app-ask (a pack's `gui_always_ask = true`, ADR-0013)
 #   weakens the guard later       memory-suspicious · agent-config
 # Everything else at medium risk (write-outside, net-unknown, app, mcp-risky, git-branch, git-stash, git-clone,
 # secret-search) is ALLOWED in light mode, logged, and listed in the daily summary.
@@ -47,6 +48,7 @@ LIGHT_STILL_ASK = {
     "unparsed", "secret-scan-failed",
     "delete-redirect", "bulk", "git-discard",
     "git-push", "install",
+    "app-ask",   # 0.4.1 (ADR-0013): a pack declared that opening its app must always ask (licence seats)
     "memory-suspicious", "agent-config",
 }
 # Tools that only CREATE a file when it does not exist yet (append-only originals zone, ADR-0010). Edit-style tools

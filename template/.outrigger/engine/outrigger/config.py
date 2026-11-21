@@ -49,6 +49,7 @@ class Pack:
     scan_extensions: list[str]
     dangerous: list[str]
     gui_level: str = "medium"
+    gui_always_ask: bool = False   # 0.4.1 (ADR-0013): opening the GUI asks in light mode too (licence seats)
     scan_scope: str = "project"   # "project": every file with scan_extensions · "target": only the files named in the command
     always_headless: bool = False  # the tool has no GUI to open (python)
 
@@ -185,6 +186,7 @@ def _load_pack(manifest: Path) -> list[Pack]:
             scan_extensions=[e.lower() for e in t.get("scan_extensions", [])],
             dangerous=list(t.get("dangerous", [])),
             gui_level=t.get("gui_level", "medium"),
+            gui_always_ask=bool(t.get("gui_always_ask", False)),
             scan_scope=t.get("scan_scope", "project"),
             always_headless=bool(t.get("always_headless", False)),
         ))

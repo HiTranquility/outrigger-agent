@@ -250,7 +250,13 @@ def quarantine_touch(seg: list[str], cfg: Config, cwd: Path) -> bool:
     here = cfg.rel(cwd)
     if here is not None and match_any(here, zone):
         return True
+    # A path inside code text (`matlab -batch "run('sandbox/quarantine/x/a.m')"`, `python -c "...")` is not an argument
+    # of its own, so the zone's folder is also looked for as text (found by the live check with the MATLAB pack).
+    prefixes = [p.lower().split("*", 1)[0].rstrip("/") + "/" for p in zone if p.split("*", 1)[0].strip("/")]
     for a in seg:
+        text = a.replace("\\", "/").lower()
+        if any(pre in text for pre in prefixes):
+            return True
         if a.startswith("-") or "://" in a:
             continue
         rel = cfg.rel(a.strip("\"'"), cwd)
@@ -367,7 +373,7 @@ def check_segment(seg: list[str], cfg: Config, cwd: Path, depth: int = 0) -> lis
     if cli_at is not None:
         out.extend(_outrigger_cli(seg[cli_at:], cfg, cwd))
 
-    if head in APPS:
+    if head in APPS and not any(head in p.commands for p in cfg.packs):   # a pack that knows the app judges it
         out.append(Finding("medium", "app", f"opens an interactive app (`{' '.join(seg[:3])}`) — L2", app=" ".join(seg[:3])))
 
     for pack in cfg.packs:
@@ -478,6 +484,10 @@ def _outrigger_cli(args: list[str], cfg: Config, cwd: Path) -> list[Finding]:
 def _pack_run(pack, seg: list[str], low: list[str], cfg: Config, cwd: Path) -> list[Finding]:
     headless = pack.always_headless or any(f in low for f in pack.headless_flags)
     if not headless:
+        if pack.gui_always_ask:   # 0.4.1 (ADR-0013): the pack says opening this app costs something (a licence seat)
+            risk = "high" if pack.gui_level == "high" else "medium"
+            return [Finding(risk, "app-ask", f"opens {pack.name} interactively — L2; this pack asks every time "
+                                             "(gui_always_ask)", app=f"{pack.name} (GUI)")]
         return [Finding(pack.gui_level, "app", f"opens {pack.name} interactively — L2", app=f"{pack.name} (GUI)")]
     ext = pack.scan_extensions[0] if pack.scan_extensions else ""
     if pack.scan_scope == "target":
