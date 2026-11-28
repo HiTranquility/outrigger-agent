@@ -15,6 +15,7 @@ Details for each rule live in `.outrigger/rules/` — read a file only when its 
 
 ## 2. Start of every task
 
+0. Session start says `OUTRIGGER FIRST RUN`? Ask the user its ONE question before anything else; never answer it yourself.
 1. Look for a matching workflow: `.outrigger/local/workflows/` (the user's own, wins) then `.outrigger/packs/*/workflows/`.
 2. New problem or idea → propose **2–4 options** (A, B, C…) with pros/cons, **cost level** (§3) and a
    recommendation, then **wait** for the choice. Do not start building in the same message.

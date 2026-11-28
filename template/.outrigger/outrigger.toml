@@ -28,6 +28,8 @@ protected = [
 never_delete = ["docs/decisions/**", "docs/postmortems/**", ".outrigger/state/logs/**"]
 # Writes outside the project that are allowed (agent scratch space, agent memory). Env vars and ~ are expanded.
 outside_allow = ["~/.claude/**", "$TEMP/**", "$TMP/**"]
+# 0.7.0 (ADR-0016): your personal workflow library, read by every project. Any write into it asks, in light mode too.
+library = ["$OUTRIGGER_HOME/**", "~/.outrigger/**"]
 # Agent memory: writes are allowed but logged, backed up first, and checked for instructions that weaken the guard.
 memory = ["~/.claude/projects/**/memory/**", "~/.codex/memories/**", "~/.gemini/memory/**"]
 # Files that change how agents behave in EVERY project: writing them needs your approval.

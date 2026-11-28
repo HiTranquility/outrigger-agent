@@ -63,12 +63,18 @@ outrigger-agent/
 ├── template/                       ← THE PRODUCT: what lands in a user's project
 │   ├── AGENTS.md  CLAUDE.md  GEMINI.md   ← rules for agents (< 8 KB)
 │   └── .outrigger/
-│       ├── engine/                 ← the guard (≈ 3,200 lines)
+│       ├── engine/                 ← the guard (≈ 4,500 lines, no file over 400)
 │       │   ├── hook.py             ← entry point per event; fail-closed wrapper
-│       │   ├── cli.py              ← human + agent commands, selftest CASES
+│       │   ├── cli.py              ← human + agent commands
 │       │   └── outrigger/
 │       │       ├── decide.py       ← tool call → Decision (§2)
-│       │       ├── rules.py        ← check_raw / check_segment: git, network, delete, self-guard, writes
+│       │       ├── rules.py        ← check_raw / check_segment: network, delete, self-guard, writes
+│       │       ├── gitrules.py     ← git global options, `git add && git commit`, history rewrites
+│       │       ├── libguard.py     ← personal library writes, `export`, promoting workflows (ADR-0016)
+│       │       ├── library.py      ← first run, `onboard` · `import` · `export` (ADR-0016)
+│       │       ├── structure.py    ← opt-in file-size gate on `git commit` (ADR-0015)
+│       │       ├── records.py      ← `next-id` across month folders and branches (ADR-0015)
+│       │       ├── selftest.py     ← selftest CASES / LIGHT_CASES / PACK_CASES
 │       │       ├── common.py       ← Finding, risk order, command-name sets and patterns (no logic deps)
 │       │       ├── quarantine.py   ← what may touch sandbox/quarantine/** (ADR-0012)
 │       │       ├── packrules.py    ← pack-declared asks, runners, targets (ADR-0013, ADR-0014)
@@ -129,7 +135,7 @@ your-project/
 | To add | Touch | Must also |
 | :-- | :-- | :-- |
 | A guard rule | `rules.py` (or the module of its concern: `scripts.py`, `quarantine.py`, `packrules.py`), `decide.py`; shared names go to `common.py` | test in `tests/test_outrigger.py`, selftest case if user-visible, RISK_REGISTER row |
-| Support for a tool (MATLAB, R…) | a pack: `pack.toml` (+ workflows) | `PACK_CASES` in `cli.py` for selftest |
+| Support for a tool (MATLAB, R…) | a pack: `pack.toml` (+ workflows) | `PACK_CASES` in `outrigger/selftest.py` |
 | A user's own way of working | `.outrigger/local/workflows/` (builder or `capture`) | nothing in the engine |
 | Another agent platform | `hook.py` adapter (Codex, Gemini, Cursor: planned) | live check on that platform |
 | A behaviour change | — | ADR first |

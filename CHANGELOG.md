@@ -4,6 +4,33 @@ All notable changes to the Outrigger core. Decisions behind each change live in 
 the risks each rule answers live in [`docs/RISK_REGISTER.md`](docs/RISK_REGISTER.md). Vietnamese notes for users:
 [`docs/vi/bat-dau.md`](docs/vi/bat-dau.md).
 
+## 0.7.0 — 2026-11-28
+
+- **First run asks once** (ADR-0016): until `.outrigger/state/onboarded.json` exists, session start prints
+  `OUTRIGGER FIRST RUN` and the agent asks the user one question (import workflows or start empty);
+  `cli.py onboard [--done "<answer>"]`.
+- **Personal workflow library** `~/.outrigger/library/workflows/` (or `$OUTRIGGER_HOME`): no library = new machine.
+  `cli.py import <library|folder>` copies into `drafts/` as drafts and skips text aimed at an agent;
+  `cli.py export <name> [--replace]` copies a promoted workflow into the library and **asks, in light mode too**,
+  like every other write into the library (`library-export`, `library-write`).
+- **Only the user promotes a workflow**: the agent writing or moving a file into `.outrigger/local/workflows/`
+  outside `drafts/` asks (`workflow-promote`).
+- **Fixed:** a command that must ask in light mode (`agent-config`, `library-write`, …) no longer passes when it sits
+  inside a script the agent runs (`script:<code>`).
+- **Fixed (R-36):** a command long enough to make the guard outlast the hook timeout ran. The hook now judges in a
+  child process and denies when its 20 s budget runs out (about 0.1 s more per call); the slow check is linear; a
+  shell command over 256,000 characters asks.
+- **Fixed (R-35):** a command hidden in an option (`git -c core.pager=…`, `tar --checkpoint-action=exec=…`,
+  `--to-command`, `-I`, `zip -TT`) or behind a variable set earlier in the same command (`D=~; rm -rf $D`) ran
+  unjudged; it is now judged like a typed command.
+- **Fixed:** `cd` with no folder (home), `cd -P`/`--` and `Set-Location -Path` were followed to the wrong folder by
+  every rule that follows `cd`.
+- **Structure gate (ADR-0015 gaps closed):** a new minified file over 2 MB asks; `git add a.py && git commit`
+  counts only what it adds; `GIT_DIR=` / `--git-dir` without `--work-tree` on a commit fails closed.
+- Engine: `selftest.py` and `gitrules.py` split out of `cli.py` and `rules.py` (both were over 400 lines).
+- Paths: PowerShell `$env:VAR` is expanded; Git Bash `/tmp` is `%TEMP%`; on Windows a trailing dot or space in a folder name no longer hides it.
+- **Fixed (R-34):** `cp`/`mv`/`tee`/`Copy-Item` into a folder outside the project was not judged.
+
 ## 0.6.0 — 2026-11-28
 
 - **Records in month folders** (ADR-0015): numbered records go into `MM-YYYY/`; an ISSUE is a folder (`issue.md` +

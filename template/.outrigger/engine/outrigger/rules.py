@@ -7,14 +7,18 @@ from urllib.parse import urlparse
 
 from .config import Config
 from .shell import WRAPPERS, base, strip_heredocs
-from .common import CD, COPY_LIKE, DELETE, Finding, INSTALLERS, MOVE_LIKE, NET, NET_OUT, OUTRIGGER_CLI, READ_ONLY, SCHEDULE, SYSTEM_HIGH, _as_path
+from .common import cd_target, CD, COPY_LIKE, DELETE, Finding, INSTALLERS, MOVE_LIKE, NET, NET_OUT, OUTRIGGER_CLI, READ_ONLY, SCHEDULE, SYSTEM_HIGH, _as_path
 from .packrules import _pack_asks, _pack_run
+from . import libguard
 from .quarantine import check_quarantine
-from .scripts import _npm_script, _script_files, _staged_secrets, _worktree_secrets
+from .scripts import _npm_script, _script_files, _staged_secrets
 from .structure import staged_findings as _structure_findings
+from .structure import settings as _structure_settings
+from .gitrules import git_env_commit, _add_then_commit, _git, _git_split  # noqa: F401 — _git_split re-exported
 from .common import worst  # noqa: F401 — re-exported for decide.py
 from .quarantine import quarantine_touch, is_recon  # noqa: F401 — re-exported for decide.py
 
+DEVICES = {"/dev/null", "/dev/stdout", "/dev/stderr", "nul", "nul:", "con", "$null"}
 WRITE_ALL = {"tee", "touch", "truncate", "set-content", "add-content", "out-file", "new-item", "ni", "clear-content"}
 HELP_FLAGS = {"-h", "--help", "/?"}
 APPS = {"start", "start-process", "saps", "explorer", "invoke-item", "ii", "code", "notepad", "open",
@@ -26,8 +30,19 @@ OUTRIGGER_HUMAN_ONLY = re.compile(r"cli\.py[\"']?\s+(?:-\S+\s+)*(approve|resume|
                                   re.IGNORECASE)
 OUTRIGGER_SELF = re.compile(r"\.outrigger[\\/](engine|state|outrigger\.toml|local[\\/]notify\.toml|local[\\/]structure-baseline\.json)|\.claude[\\/]settings"
                        r"|\.mcp\.json|\.codex[\\/]|\.agents[\\/]hooks\.json|\.cursor[\\/]hooks\.json", re.IGNORECASE)
-PIPE_TO_SHELL = re.compile(r"(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^|\n]*\|\s*"
-                           r"(sudo\s+)?(sh|bash|zsh|python3?|iex|invoke-expression|pwsh|powershell)\b", re.IGNORECASE)
+# Linear on purpose (review 0.7.0 round 9): `(curl…)\b[^|\n]*\|` re-scanned the rest of the line after every
+# `curl`, so 450 KB of `curl curl …` took two minutes and the host's hook timeout let the command run.
+_DOWNLOADER = re.compile(r"\b(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b", re.IGNORECASE)
+_SHELL_HEAD = re.compile(r"\s*(sudo\s+)?(sh|bash|zsh|python3?|iex|invoke-expression|pwsh|powershell)\b", re.IGNORECASE)
+
+
+def pipe_to_shell(command: str) -> bool:
+    for line in command.split("\n"):
+        pieces = line.split("|")
+        for before, after in zip(pieces, pieces[1:]):
+            if _SHELL_HEAD.match(after) and _DOWNLOADER.search(before):
+                return True
+    return False
 PY_DELETE = re.compile(r"shutil\.rmtree|os\.(remove|unlink|rmdir)|Path\([^)]*\)\.unlink|\.rmdir\(", re.IGNORECASE)
 ROOTLIKE = {"/", "\\", "~", "~/", "*", "/*", ".", "./", "..", "../", "c:", "c:\\", "c:/", "$home", "%userprofile%"}
 REDIRECT_TARGET = re.compile(r"(?:^|[^<0-9&])\d?>>?\s*(\"[^\"]+\"|'[^']+'|[^\s;&|]+)")
@@ -46,8 +61,8 @@ def _self_hit(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
         if not seg:
             continue
         head = base(seg[0])
-        if head in CD and len(seg) > 1:
-            cur = _as_path(seg[1], cur)
+        if head in CD:
+            cur = cd_target(seg, cur)
             continue
         if head in READ_ONLY:
             continue
@@ -67,12 +82,35 @@ def _self_hit(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
     return None
 
 
-def check_raw(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -> list[Finding]:
+def _judge_hidden(text: str, cfg: Config, cwd: Path, depth: int) -> list[Finding]:
+    """A command line hidden in an option value or behind a variable is judged like a typed one (0.7.0)."""
+    from .shell import ParseError, split_commands
+    try:
+        segs = split_commands(text)
+    except ParseError:
+        return [Finding("medium", "unparsed", f"a command hidden in an option cannot be read safely: `{text[:60]}`")]
+    out, cur = check_raw(text, segs, cfg, cwd, depth + 1), cwd
+    for seg in segs:
+        if seg and base(seg[0]) in CD:               # `cd .outrigger/local && D=workflows; cp … $D/`
+            cur = cd_target(seg, cur)
+            continue
+        out.extend(check_segment(seg, cfg, cur))
+    return out
+
+
+def check_raw(command: str, segments: list[list[str]], cfg: Config, cwd: Path, _depth: int = 0) -> list[Finding]:
     out = []
-    if PIPE_TO_SHELL.search(command):
+    if _depth < 2:   # assignments filled in; `tar --to-command=…`, `zip -TT …`, `git -c core.pager=…`
+        for hidden in libguard.hidden_commands(command, segments):
+            out.extend(_judge_hidden(hidden, cfg, cwd, _depth))
+    if pipe_to_shell(command):
         out.append(Finding("high", "pipe-to-shell", "download piped straight into a shell or interpreter"))
     if OUTRIGGER_HUMAN_ONLY.search(command) and not _only_help(command, segments):
         out.append(Finding("high", "self-approval", "approve/deny/resume/empty-trash/trust are human-only commands"))
+    out.extend(libguard.check(command, segments, cfg, cwd))   # 0.7.0 (ADR-0016)
+    if _structure_settings(cfg)["enabled"] and git_env_commit(command):   # 0.7.0: the gate cannot see where
+        out.append(Finding("medium", "structure-check-failed", "git runs with GIT_DIR / GIT_WORK_TREE / --git-dir "
+                                                               "set, so the size gate cannot tell which files it commits"))
     hit = _self_hit(command, segments, cfg, cwd)
     if hit:
         out.append(Finding("high", "outrigger-self", f"command touches Outrigger or hook configuration ({hit})"))
@@ -82,12 +120,16 @@ def check_raw(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
             continue
         rel = cfg.rel(t, cwd)
         if rel is None:
-            if cfg.outside_kind(t) == "agent-config":
+            if cfg.outside_kind(t) == "library":
+                out.append(Finding("medium", "library-write", f"redirects output into the personal library `{t}`"))
+            elif cfg.outside_kind(t) == "agent-config":
                 out.append(Finding("medium", "agent-config", f"redirects output into agent configuration `{t}`"))
             elif not cfg.outside_allowed(t):
                 out.append(Finding("medium", "write-outside", f"redirects output outside the project: `{t}`"))
         elif cfg.zone_of(rel) in {"red", "protected", "originals"}:
             out.append(Finding("high", "write-protected", f"redirects output into `{rel}` ({cfg.zone_of(rel)} zone)"))
+        elif libguard.promotes(rel):
+            out.append(libguard.promote_finding(rel, "redirects output into"))
     if re.search(r"base64\s+(-d|--decode)[^|\n]*\|\s*(sh|bash)", command, re.IGNORECASE):
         out.append(Finding("high", "encoded-exec", "decoded payload piped into a shell"))
     out.extend(_add_then_commit(segments, cfg, cwd))
@@ -163,6 +205,10 @@ def _write_targets(head: str, args: list[str]) -> list[str]:
     for flag in ("-t", "--target-directory", "-destination"):
         if flag in low and low.index(flag) + 1 < len(args):
             return [args[low.index(flag) + 1]]
+    for a in args:   # `--target-directory=DIR`, `-t=DIR`, `-Destination:DIR`
+        for flag in ("--target-directory=", "-t=", "-destination:", "-destination="):
+            if a.lower().startswith(flag):
+                return [a[len(flag):]]
     return pos[-1:]
 
 
@@ -176,6 +222,18 @@ def _guarded_writes(head: str, args: list[str], cfg: Config, cwd: Path) -> list[
         rel = cfg.rel(_as_path(t, cwd))
         if rel is not None and cfg.zone_of(rel) in {"protected", "originals"}:
             out.append(Finding("high", "write-protected", f"`{head}` changes `{rel}` ({cfg.zone_of(rel)} zone)"))
+        elif libguard.promotes(rel):
+            out.append(libguard.promote_finding(rel, f"`{head}` writes"))
+        elif rel is None and t.strip("\"'").lower() in DEVICES:
+            continue
+        elif rel is None:   # 0.7.0: `cp`/`mv`/`tee` into a folder outside the project was not judged before
+            kind = cfg.outside_kind(_as_path(t, cwd))
+            if kind == "library":
+                out.append(Finding("medium", "library-write", f"`{head}` writes into the personal library `{t}`"))
+            elif kind == "agent-config":
+                out.append(Finding("medium", "agent-config", f"`{head}` changes agent configuration `{t}`"))
+            elif kind not in {"allow", "memory"}:
+                out.append(Finding("medium", "write-outside", f"`{head}` writes outside the project: `{t}`"))
     return out
 EXEC_HEADS = WRAPPERS | {"python", "python3", "py", "node", "deno", "bun", "ruby", "perl", "php", "iex",
                          "invoke-expression", "source", ".", "npx", "pnpx", "java", "dotnet", "go", "cargo", "make",
@@ -265,85 +323,6 @@ def check_segment(seg: list[str], cfg: Config, cwd: Path, depth: int = 0) -> lis
     return out
 
 
-GIT_GLOBAL_VALUE = {"-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix", "--exec-path"}
-
-
-def _git_split(args: list[str], cwd: Path) -> tuple[list[str], Path]:
-    """Skip git's global options (`-C <dir>`, `-c k=v`, `--git-dir …`, `--no-pager`, `-p` …); return the lower-cased
-    subcommand with its arguments and the directory git will run in (`-C` may repeat and is relative)."""
-    i, gcwd, git_dir, work_tree = 0, cwd, None, None
-    while i < len(args):
-        a = args[i]
-        if a == "-C" and i + 1 < len(args):
-            gcwd = _as_path(args[i + 1], gcwd)
-            i += 2
-            continue
-        key, eq, val = a.partition("=")
-        if key.lower() in GIT_GLOBAL_VALUE:
-            if not eq:
-                val = args[i + 1] if i + 1 < len(args) else ""
-            if key.lower() == "--git-dir":
-                git_dir = _as_path(val, gcwd)
-            elif key.lower() == "--work-tree":
-                work_tree = _as_path(val, gcwd)
-            i += 1 if eq else 2
-            continue
-        if a.startswith("-"):
-            i += 1
-            continue
-        break
-    if work_tree is not None:                # the files a commit carries live in the work tree
-        gcwd = work_tree
-    elif git_dir is not None:
-        gcwd = git_dir.parent if git_dir.name.lower() == ".git" else git_dir
-    return [x.lower() for x in args[i:]], gcwd
-
-
-def _add_then_commit(segments: list[list[str]], cfg: Config, cwd: Path) -> list[Finding]:
-    """`git add x && git commit` in one command: the guard runs before `git add`, so the index does not hold the new
-    content yet. Judge what is on disk instead (secrets and, when on, file size)."""
-    staged_before, cur = False, cwd
-    out: list[Finding] = []
-    for seg in segments:
-        if seg and base(seg[0]) in CD and len(seg) > 1:      # `cd nested && git add … && git commit`
-            cur = _as_path(seg[1], cur)
-            continue
-        if not seg or base(seg[0]) != "git":
-            continue
-        sub, gcwd = _git_split(seg[1:], cur)
-        if sub[:1] in (["add"], ["stage"], ["mv"], ["rm"], ["apply"], ["update-index"]):
-            staged_before = True
-        elif sub[:1] == ["commit"] and staged_before:
-            out.extend(_worktree_secrets(cfg, gcwd))
-            out.extend(_structure_findings(sub, cfg, gcwd, force_disk=True, untracked=True))
-    return out
-
-
-def _git(low: list[str]) -> list[Finding]:
-    if not low:
-        return []
-    sub, rest = low[0], low[1:]
-    if sub == "push":
-        if any(a in {"--force", "-f", "--force-with-lease", "--mirror", "--delete", "-d", "--prune"} or a.startswith("--force") or a.startswith(":") for a in rest):
-            return [Finding("high", "git-force", "force/delete push rewrites shared history")]
-        return [Finding("medium", "git-push", "push sends code off this machine")]
-    if sub == "reset" and "--hard" in rest:
-        return [Finding("high", "git-hard", "`git reset --hard` discards work")]
-    if sub == "clean" and any(a.startswith("-") and "f" in a for a in rest):
-        return [Finding("high", "git-clean", "`git clean -f` deletes untracked files for good")]
-    if sub == "branch" and any(a in {"-d", "--delete"} for a in rest):
-        return [Finding("medium", "git-branch", "deletes a branch")]
-    if sub in {"filter-branch", "filter-repo"}:
-        return [Finding("high", "git-rewrite", "rewrites history")]
-    if sub in {"checkout", "restore"} and ("." in rest or "--" in rest):
-        return [Finding("medium", "git-discard", "discards uncommitted changes")]
-    if sub == "stash" and rest[:1] in (["drop"], ["clear"]):
-        return [Finding("medium", "git-stash", "drops stashed work")]
-    if sub == "clone":
-        return [Finding("medium", "git-clone", "downloads a repository — check the source tier")]
-    return []
-
-
 def _delete(args: list[str], cfg: Config, cwd: Path) -> Finding:
     targets = [a for a in args if not a.startswith("-") and not (len(a) <= 3 and a.startswith("/") and a[1:].isalpha())]
     for t in targets:
@@ -407,6 +386,8 @@ def _outrigger_cli(args: list[str], cfg: Config, cwd: Path) -> list[Finding]:
                 return [Finding("high", "trash-outside", f"`{p}` is outside the project")]
             if match_any(rel, cfg.section("zones").get("never_delete", [])) and sub == "trash":
                 return [Finding("high", "never-delete", f"`{rel}` is never_delete")]
+            if libguard.promotes(rel) or rel.lower().rstrip("/") == ".outrigger":   # 0.7.0 (ADR-0016)
+                return [libguard.promote_finding(rel, f"`{sub}` removes")]
             full = cfg.root / rel
             for f in ([full] if full.is_file() else full.rglob("*") if full.is_dir() else []):
                 if f.is_file():

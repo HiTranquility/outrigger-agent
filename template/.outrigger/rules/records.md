@@ -36,6 +36,16 @@ Remove detours the user confirms were detours. Never promote a draft yourself.
 When the task **did** follow a workflow and something changed (a step added, a gate that turned out routine), add a
 row to that workflow's *Changelog* instead of capturing a new one.
 
+## First run and the personal library (0.7.0, ADR-0016)
+
+`OUTRIGGER FIRST RUN` at session start = this project was never set up. Ask **one** question: import workflows (from
+the personal library, another project folder, or a repository read with `cli.py recon`), or start empty? Then:
+`cli.py import library` / `cli.py import <folder>` (everything lands in `drafts/` as `status: draft`; files with text
+aimed at an agent are skipped — show the user the SKIP lines), and `cli.py onboard --done "<their answer>"`.
+The library (`~/.outrigger/library/workflows/`, or `$OUTRIGGER_HOME`) reaches every project: put a workflow there only
+with `cli.py export <name>` when the user asks, after they promoted it. The guard asks every time. Never write the
+library folder any other way.
+
 - **Folders (0.6.0, ADR-0015).** Numbered records go into a month folder `MM-YYYY/` of the month they were created;
   an ISSUE is a folder: only `issue.md` at its top, then `phase/`, `review/` (`review-N.md`), `handoff/`, `evidence/`.
   Records written before 0.6.0 stay where they are (flat); do not move them.
