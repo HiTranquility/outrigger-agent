@@ -103,6 +103,11 @@ def session_start(payload: dict) -> int:
         lines.append("Standing-rule suggestions (the user approved these 3+ times; tell them once, never accept yourself): "
                      + "; ".join(f"{s['id']} = {s['describe']} (x{s['count']})" for s in sugg[:5])
                      + " — they accept with: python .outrigger/engine/cli.py rule accept <id>")
+    try:   # 0.7.0 (ADR-0016): first run in this project — the agent asks the user one question first
+        from outrigger import library
+        lines += library.first_run_lines(cfg)
+    except Exception:  # never break a session over the first-run note
+        pass
     print("\n".join(lines))
     return 0
 

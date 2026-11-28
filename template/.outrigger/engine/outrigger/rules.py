@@ -7,14 +7,16 @@ from urllib.parse import urlparse
 
 from .config import Config
 from .shell import WRAPPERS, base, strip_heredocs
-from .common import CD, COPY_LIKE, DELETE, Finding, INSTALLERS, MOVE_LIKE, NET, NET_OUT, OUTRIGGER_CLI, READ_ONLY, SCHEDULE, SYSTEM_HIGH, _as_path
+from .common import cd_target, CD, COPY_LIKE, DELETE, Finding, INSTALLERS, MOVE_LIKE, NET, NET_OUT, OUTRIGGER_CLI, READ_ONLY, SCHEDULE, SYSTEM_HIGH, _as_path
 from .packrules import _pack_asks, _pack_run
+from . import libguard
 from .quarantine import check_quarantine
 from .scripts import _npm_script, _script_files, _staged_secrets, _worktree_secrets
 from .structure import staged_findings as _structure_findings
 from .common import worst  # noqa: F401 — re-exported for decide.py
 from .quarantine import quarantine_touch, is_recon  # noqa: F401 — re-exported for decide.py
 
+DEVICES = {"/dev/null", "/dev/stdout", "/dev/stderr", "nul", "nul:", "con", "$null"}
 WRITE_ALL = {"tee", "touch", "truncate", "set-content", "add-content", "out-file", "new-item", "ni", "clear-content"}
 HELP_FLAGS = {"-h", "--help", "/?"}
 APPS = {"start", "start-process", "saps", "explorer", "invoke-item", "ii", "code", "notepad", "open",
@@ -46,8 +48,8 @@ def _self_hit(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
         if not seg:
             continue
         head = base(seg[0])
-        if head in CD and len(seg) > 1:
-            cur = _as_path(seg[1], cur)
+        if head in CD:
+            cur = cd_target(seg, cur)
             continue
         if head in READ_ONLY:
             continue
@@ -73,6 +75,7 @@ def check_raw(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
         out.append(Finding("high", "pipe-to-shell", "download piped straight into a shell or interpreter"))
     if OUTRIGGER_HUMAN_ONLY.search(command) and not _only_help(command, segments):
         out.append(Finding("high", "self-approval", "approve/deny/resume/empty-trash/trust are human-only commands"))
+    out.extend(libguard.check(command, segments, cfg, cwd))   # 0.7.0 (ADR-0016)
     hit = _self_hit(command, segments, cfg, cwd)
     if hit:
         out.append(Finding("high", "outrigger-self", f"command touches Outrigger or hook configuration ({hit})"))
@@ -82,12 +85,16 @@ def check_raw(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
             continue
         rel = cfg.rel(t, cwd)
         if rel is None:
-            if cfg.outside_kind(t) == "agent-config":
+            if cfg.outside_kind(t) == "library":
+                out.append(Finding("medium", "library-write", f"redirects output into the personal library `{t}`"))
+            elif cfg.outside_kind(t) == "agent-config":
                 out.append(Finding("medium", "agent-config", f"redirects output into agent configuration `{t}`"))
             elif not cfg.outside_allowed(t):
                 out.append(Finding("medium", "write-outside", f"redirects output outside the project: `{t}`"))
         elif cfg.zone_of(rel) in {"red", "protected", "originals"}:
             out.append(Finding("high", "write-protected", f"redirects output into `{rel}` ({cfg.zone_of(rel)} zone)"))
+        elif libguard.promotes(rel):
+            out.append(libguard.promote_finding(rel, "redirects output into"))
     if re.search(r"base64\s+(-d|--decode)[^|\n]*\|\s*(sh|bash)", command, re.IGNORECASE):
         out.append(Finding("high", "encoded-exec", "decoded payload piped into a shell"))
     out.extend(_add_then_commit(segments, cfg, cwd))
@@ -163,6 +170,10 @@ def _write_targets(head: str, args: list[str]) -> list[str]:
     for flag in ("-t", "--target-directory", "-destination"):
         if flag in low and low.index(flag) + 1 < len(args):
             return [args[low.index(flag) + 1]]
+    for a in args:   # `--target-directory=DIR`, `-t=DIR`, `-Destination:DIR`
+        for flag in ("--target-directory=", "-t=", "-destination:", "-destination="):
+            if a.lower().startswith(flag):
+                return [a[len(flag):]]
     return pos[-1:]
 
 
@@ -176,6 +187,18 @@ def _guarded_writes(head: str, args: list[str], cfg: Config, cwd: Path) -> list[
         rel = cfg.rel(_as_path(t, cwd))
         if rel is not None and cfg.zone_of(rel) in {"protected", "originals"}:
             out.append(Finding("high", "write-protected", f"`{head}` changes `{rel}` ({cfg.zone_of(rel)} zone)"))
+        elif libguard.promotes(rel):
+            out.append(libguard.promote_finding(rel, f"`{head}` writes"))
+        elif rel is None and t.strip("\"'").lower() in DEVICES:
+            continue
+        elif rel is None:   # 0.7.0: `cp`/`mv`/`tee` into a folder outside the project was not judged before
+            kind = cfg.outside_kind(_as_path(t, cwd))
+            if kind == "library":
+                out.append(Finding("medium", "library-write", f"`{head}` writes into the personal library `{t}`"))
+            elif kind == "agent-config":
+                out.append(Finding("medium", "agent-config", f"`{head}` changes agent configuration `{t}`"))
+            elif kind not in {"allow", "memory"}:
+                out.append(Finding("medium", "write-outside", f"`{head}` writes outside the project: `{t}`"))
     return out
 EXEC_HEADS = WRAPPERS | {"python", "python3", "py", "node", "deno", "bun", "ruby", "perl", "php", "iex",
                          "invoke-expression", "source", ".", "npx", "pnpx", "java", "dotnet", "go", "cargo", "make",
@@ -305,8 +328,8 @@ def _add_then_commit(segments: list[list[str]], cfg: Config, cwd: Path) -> list[
     staged_before, cur = False, cwd
     out: list[Finding] = []
     for seg in segments:
-        if seg and base(seg[0]) in CD and len(seg) > 1:      # `cd nested && git add … && git commit`
-            cur = _as_path(seg[1], cur)
+        if seg and base(seg[0]) in CD:      # `cd nested && git add … && git commit`
+            cur = cd_target(seg, cur)
             continue
         if not seg or base(seg[0]) != "git":
             continue
@@ -407,6 +430,8 @@ def _outrigger_cli(args: list[str], cfg: Config, cwd: Path) -> list[Finding]:
                 return [Finding("high", "trash-outside", f"`{p}` is outside the project")]
             if match_any(rel, cfg.section("zones").get("never_delete", [])) and sub == "trash":
                 return [Finding("high", "never-delete", f"`{rel}` is never_delete")]
+            if libguard.promotes(rel) or rel.lower().rstrip("/") == ".outrigger":   # 0.7.0 (ADR-0016)
+                return [libguard.promote_finding(rel, f"`{sub}` removes")]
             full = cfg.root / rel
             for f in ([full] if full.is_file() else full.rglob("*") if full.is_dir() else []):
                 if f.is_file():

@@ -1120,7 +1120,8 @@ class RegisterIntegrity(unittest.TestCase):
         self.assertTrue(named)
         import test_group1
         import test_group2
-        classes = {**globals(), **vars(test_group1), **vars(test_group2)}
+        import test_group3
+        classes = {**globals(), **vars(test_group1), **vars(test_group2), **vars(test_group3)}
         missing = [f"{c}.{t}" for c, t in named if not hasattr(classes.get(c), t)]
         self.assertEqual(missing, [])
 

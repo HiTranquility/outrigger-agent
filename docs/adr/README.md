@@ -19,3 +19,4 @@ Never delete an ADR. To change a decision, write a new ADR and mark the old one 
 | [0013](0013-pack-gui-always-ask.md) | A pack can make opening its app ask in light mode too (licence seats) — amends 0009 |
 | [0014](0014-pack-ask-commands.md) | A pack can list commands that must always be asked about (`[[ask]]`: schema migrations, data drops) |
 | [0015](0015-records-in-month-folders-and-structure-gate.md) | Records in month folders, ISSUE as a folder, `next-id` across branches, opt-in structure gate on `git commit` — amends 0009 |
+| [0016](0016-first-run-and-personal-workflow-library.md) | First run asks the user once; personal workflow library `~/.outrigger/library/`, `import` into drafts, `export` asks — amends 0009 |

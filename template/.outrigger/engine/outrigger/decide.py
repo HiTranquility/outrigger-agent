@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import learn, packs, rules, state
+from . import learn, libguard, packs, rules, state
 from .config import Config
 from .rules import Finding
 from .shell import ParseError, split_commands
@@ -42,6 +42,7 @@ MEMORY_SUSPICIOUS = re.compile(
 #   costs a licence seat          app-ask (a pack's `gui_always_ask = true`, ADR-0013)
 #   weakens the guard later       memory-suspicious · agent-config
 #   grows a file that may only shrink   structure-grow · structure-check-failed (ADR-0015, opt-in)
+#   reaches every project         library-write · library-export (ADR-0016)
 # Everything else at medium risk (write-outside, net-unknown, app, mcp-risky, git-branch, git-stash, git-clone,
 # secret-search) is ALLOWED in light mode, logged, and listed in the daily summary.
 LIGHT_STILL_ASK = {
@@ -53,6 +54,8 @@ LIGHT_STILL_ASK = {
     "app-ask",   # 0.4.1 (ADR-0013): a pack declared that opening its app must always ask (licence seats)
     "memory-suspicious", "agent-config",
     "structure-grow", "structure-check-failed",  # 0.6.0 (ADR-0015): file-size ratchet on git commit, opt-in
+    "library-write", "library-export",           # 0.7.0 (ADR-0016): the personal library reaches every project
+    "workflow-promote",                          # 0.7.0: a workflow outside drafts/ is one the user promoted
 }
 PACK_ALWAYS = {"pack-ask", "app-ask"}
 # Tools that only CREATE a file when it does not exist yet (append-only originals zone, ADR-0010). Edit-style tools
@@ -112,7 +115,10 @@ def _write_findings(cfg: Config, tool: str, tool_input: dict, cwd: Path) -> tupl
         rel = cfg.rel(p, cwd)
         if rel is None:
             kind = cfg.outside_kind(p)
-            if kind == "agent-config":
+            if kind == "library":
+                findings.append(Finding("medium", "library-write", f"`{p}` is your personal workflow library, read by "
+                                        "every project — write it with `cli.py export`, and only with your approval"))
+            elif kind == "agent-config":
                 findings.append(Finding("medium", "agent-config",
                                         f"`{p}` changes how agents behave in every project — only with your approval"))
             elif kind == "memory":
@@ -136,6 +142,8 @@ def _write_findings(cfg: Config, tool: str, tool_input: dict, cwd: Path) -> tupl
                 findings.append(Finding("high", "protected-path", f"`{rel}` is protected — only the human edits it"))
         elif zone == "originals":
             findings.append(_original_write(cfg, tool, tool_input, p, rel))
+        elif libguard.promotes(rel):   # 0.7.0 (ADR-0016): only the user promotes a workflow
+            findings.append(libguard.promote_finding(rel, "writes"))
         elif zone == "yellow":
             to_backup.append(rel)
         # dangerous code being written into a pack file is logged (the headless run will be gated)
@@ -203,8 +211,8 @@ def decide(cfg: Config, tool: str, tool_input: dict, cwd: Path) -> Decision:
         cur = cwd   # 0.3.1: follow `cd` so a relative path is judged where it will really be used (ADR-0010)
         touched, runners = False, []
         for seg in segments:
-            if seg and rules.base(seg[0]) in rules.CD and len(seg) > 1:
-                cur = rules._as_path(seg[1], cur)
+            if seg and rules.base(seg[0]) in rules.CD:
+                cur = rules.cd_target(seg, cur)
                 continue
             findings += rules.check_segment(seg, cfg, cur)
             if rules.is_recon(seg):
@@ -241,8 +249,9 @@ def decide(cfg: Config, tool: str, tool_input: dict, cwd: Path) -> Decision:
     if risk == "low":
         return Decision(True, risk, findings, backups=backups, apps=apps)
     # a pack's "always ask" holds when the command is hidden in a script too (`script:pack-ask`, ADR-0014)
-    if risk == "medium" and cfg.light and not any(f.code in LIGHT_STILL_ASK or f.code.split(":")[-1] in PACK_ALWAYS
-                                                  for f in findings):
+    # 0.7.0: any light-mode "still ask" code holds inside a script too (`script:library-write`, `script:agent-config`)
+    if risk == "medium" and cfg.light and not any(f.code in LIGHT_STILL_ASK or f.code.split(":")[-1] in LIGHT_STILL_ASK
+                                                  or f.code.split(":")[-1] in PACK_ALWAYS for f in findings):
         return Decision(True, risk, findings, backups=backups, apps=apps, light=True)
     aid = state.approval_id(tool, tool_input)
     sigs = learn.signatures(cfg, t, short, tool_input, findings, segments, _paths_from(tool_input), cwd)

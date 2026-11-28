@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +24,8 @@ DEFAULTS: dict = {
         "quarantine": ["sandbox/quarantine/**"],
         "never_delete": ["docs/decisions/**", ".outrigger/state/logs/**"],
         "outside_allow": ["~/.claude/**", "$TEMP/**", "$TMP/**"],
+        # 0.7.0 (ADR-0016): the personal workflow library reaches every project: writes into it always ask.
+        "library": ["$OUTRIGGER_HOME/**", "~/.outrigger/**"],
         "memory": ["~/.claude/projects/**/memory/**", "~/.codex/memories/**", "~/.gemini/memory/**"],
         "agent_config": ["~/.claude/CLAUDE.md", "~/.claude/settings.json", "~/.claude/settings.local.json",
                          "~/.claude/skills/**", "~/.claude/agents/**", "~/.claude/commands/**", "~/.claude/rules/**",
@@ -38,6 +41,24 @@ DEFAULTS: dict = {
     # 0.3.2 (ADR-0011): offer a standing rule after this many approvals of the same kind of action; 0 = never offer.
     "rules": {"suggest_after": 3, "window_days": 30, "ttl_days": 90},
 }
+
+
+ENV_PS = re.compile(r"\$\{?env:([A-Za-z_][A-Za-z0-9_]*)\}?", re.IGNORECASE)
+
+
+def expand(s: str) -> str:
+    """`~`, `$VAR`, `${VAR}`, `%VAR%` and PowerShell `$env:VAR` (an unset PowerShell variable stays as written)."""
+    s = ENV_PS.sub(lambda m: os.environ.get(m.group(1), m.group(0)), str(s))
+    if os.name == "nt" and os.environ.get("TEMP") and re.match(r"^/tmp(/|$)", s):   # Git Bash maps /tmp to %TEMP%
+        s = os.environ["TEMP"] + s[4:]
+    return os.path.expandvars(os.path.expanduser(s))
+
+
+def _win_trim(posix: str) -> str:
+    """Windows drops trailing dots and spaces from each name: `.outrigger./x` IS `.outrigger/x`."""
+    if os.name != "nt":
+        return posix
+    return "/".join(part if part in {".", ".."} else part.rstrip(". ") or part for part in posix.split("/"))
 
 
 @dataclass
@@ -91,7 +112,7 @@ class Config:
 
     def rel(self, path: str | Path, cwd: Path | None = None) -> str | None:
         """Project-relative posix path, or None when outside the project."""
-        p = Path(os.path.expandvars(os.path.expanduser(str(path))))
+        p = Path(expand(str(path)))
         if not p.is_absolute():
             p = (cwd or self.root) / p
         try:
@@ -114,10 +135,11 @@ class Config:
         return "yellow"
 
     def outside_kind(self, path: str | Path) -> str | None:
-        """For a path outside the project: 'memory', 'agent-config', 'allow' or None (not allowed)."""
-        p = Path(os.path.expandvars(os.path.expanduser(str(path)))).resolve(strict=False).as_posix().lower()
+        """For a path outside the project: 'library', 'memory', 'agent-config', 'allow' or None (not allowed)."""
+        p = _win_trim(Path(expand(str(path))).resolve(strict=False).as_posix()).lower()
         zones = self.section("zones")
-        for kind, key in (("memory", "memory"), ("agent-config", "agent_config"), ("allow", "outside_allow")):
+        for kind, key in (("library", "library"), ("memory", "memory"), ("agent-config", "agent_config"),
+                          ("allow", "outside_allow")):
             for pat in zones.get(key, []):
                 expanded = os.path.expandvars(os.path.expanduser(pat))
                 if "$" in expanded:  # unset variable: never match

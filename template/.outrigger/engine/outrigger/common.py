@@ -55,7 +55,26 @@ CD = {"cd", "pushd", "set-location", "sl", "chdir"}
 MSYS_DRIVE = re.compile(r"^/([a-zA-Z])(/|$)")
 
 
+CD_FLAGS = {"-p", "-l", "-e", "-@", "--", "-passthru"}
+CD_VALUE_FLAGS = {"-path", "-literalpath", "-stackname"}
+
+
+def cd_target(seg: list[str], cur: Path) -> Path:
+    """Where `cd` / `Set-Location` / `pushd` leaves the shell: flags skipped, no folder = home (0.7.0 review)."""
+    args, i = seg[1:], 0
+    while i < len(args):
+        a = args[i].lower()
+        if a in CD_VALUE_FLAGS:
+            return _as_path(args[i + 1], cur) if i + 1 < len(args) else cur
+        if a in CD_FLAGS or (a.startswith("-") and len(a) == 2 and a != "-"):
+            i += 1
+            continue
+        return cur if a == "-" else _as_path(args[i], cur)   # `cd -`: previous folder, unknown here
+    return Path(os.path.expanduser("~"))
+
+
 def _as_path(token: str, cwd: Path) -> Path:
     p = MSYS_DRIVE.sub(lambda m: m.group(1) + ":/", token.strip("\"'"))   # Git Bash: /c/Users -> c:/Users
-    p = Path(os.path.expandvars(os.path.expanduser(p)))
+    from .config import expand   # `$env:VAR` too (PowerShell)
+    p = Path(expand(p))
     return p if p.is_absolute() else cwd / p

@@ -2,7 +2,8 @@
 """Outrigger command line.  python .outrigger/engine/cli.py <command> ...
 
 Agent may use:  status · pending · trash · trash-list · restore · archive · stop · scan · recon · capture · notify-test · selftest
-                next-id · structure [--update]
+                next-id · structure [--update] · onboard · import
+Asks every time: export   (writes the personal library ~/.outrigger/, which every project reads — ADR-0016)
 Human only:     approve · deny · resume · empty-trash · trust · untrust · rule accept · structure --seed   (the guard blocks the agent)
 Anyone:         rule list · rule drop   (dropping a rule only makes the guard stricter)
 """
@@ -15,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from outrigger import __version__, config, learn, notify, packs, records, state, structure  # noqa: E402
+from outrigger import __version__, config, learn, library, notify, packs, records, state, structure  # noqa: E402
 from outrigger.decide import decide  # noqa: E402
 
 
@@ -341,6 +342,7 @@ CASES = [
     ("Bash", {"command": "bash sandbox/quarantine/tool@abc/install.sh"}, False, "high"),
     ("Bash", {"command": "cd sandbox/quarantine/tool@abc && npm install"}, False, "high"),
     ("Bash", {"command": "cat sandbox/quarantine/tool@abc/x.sh | sh"}, False, "high"),
+    ("Bash", {"command": "python .outrigger/engine/cli.py import library"}, True, "low"),
 ]
 # Light mode (0.3.0, ADR-0009): high risk and the LIGHT_STILL_ASK codes are still blocked; other medium risk passes.
 LIGHT_CASES = [
@@ -355,6 +357,8 @@ LIGHT_CASES = [
     ("Bash", {"command": "wget https://unknown-site.xyz/tool.zip"}, True, "medium"),
     ("WebFetch", {"url": "https://pastebin.com/raw/abc"}, True, "medium"),
     ("Bash", {"command": "start notepad"}, True, "medium"),
+    ("Bash", {"command": "python .outrigger/engine/cli.py export release"}, False, "medium"),       # ADR-0016
+    ("Write", {"file_path": "~/.outrigger/library/workflows/x.md", "content": "x"}, False, "medium"),
 ]
 PACK_CASES = {  # only checked when the pack is installed
     "python": [("Bash", {"command": "python -c \"import subprocess; subprocess.run(['x'])\""}, False, "medium")],
@@ -488,6 +492,7 @@ def main() -> int:
     p = sub.add_parser("next-id"); p.add_argument("kind", help="ADR · REQ · ISSUE · BUG · SPIKE · PM"); p.set_defaults(fn=cmd_next_id)
     p = sub.add_parser("structure", allow_abbrev=False); g = p.add_mutually_exclusive_group()   # `--se` must not mean --seed
     g.add_argument("--update", action="store_true"); g.add_argument("--seed", action="store_true"); p.set_defaults(fn=cmd_structure)
+    library.register(sub, _cfg)   # 0.7.0 (ADR-0016): onboard · import · export
     p = sub.add_parser("selftest"); p.add_argument("-v", "--verbose", action="store_true"); p.set_defaults(fn=cmd_selftest)
     a = ap.parse_args()
     return a.fn(a)

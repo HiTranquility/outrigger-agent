@@ -7,7 +7,7 @@ An outrigger is the float lashed beside a canoe: it lets a narrow, fast hull tak
 Outrigger does the same for AI coding agents that people run with **bypass all permissions**: the agent keeps its
 speed, and the human keeps the helm.
 
-> **Status: 0.6.0, early.** Enforcement works on Claude Code today. Codex, Antigravity/Gemini and Cursor read the
+> **Status: 0.7.0, early.** Enforcement works on Claude Code today. Codex, Antigravity/Gemini and Cursor read the
 > rules but are not yet enforced by a hook (adapters planned). Read [Honest limits](#honest-limits) before relying on it.
 
 ## What it does

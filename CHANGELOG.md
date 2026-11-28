@@ -4,6 +4,24 @@ All notable changes to the Outrigger core. Decisions behind each change live in 
 the risks each rule answers live in [`docs/RISK_REGISTER.md`](docs/RISK_REGISTER.md). Vietnamese notes for users:
 [`docs/vi/bat-dau.md`](docs/vi/bat-dau.md).
 
+## 0.7.0 — 2026-11-28
+
+- **First run asks once** (ADR-0016): until `.outrigger/state/onboarded.json` exists, session start prints
+  `OUTRIGGER FIRST RUN` and the agent asks the user one question (import workflows or start empty);
+  `cli.py onboard [--done "<answer>"]`.
+- **Personal workflow library** `~/.outrigger/library/workflows/` (or `$OUTRIGGER_HOME`): no library = new machine.
+  `cli.py import <library|folder>` copies into `drafts/` as drafts and skips text aimed at an agent;
+  `cli.py export <name> [--replace]` copies a promoted workflow into the library and **asks, in light mode too**,
+  like every other write into the library (`library-export`, `library-write`).
+- **Only the user promotes a workflow**: the agent writing or moving a file into `.outrigger/local/workflows/`
+  outside `drafts/` asks (`workflow-promote`).
+- **Fixed:** a command that must ask in light mode (`agent-config`, `library-write`, …) no longer passes when it sits
+  inside a script the agent runs (`script:<code>`).
+- **Fixed:** `cd` with no folder (home), `cd -P`/`--` and `Set-Location -Path` were followed to the wrong folder by
+  every rule that follows `cd`.
+- Paths: PowerShell `$env:VAR` is expanded; Git Bash `/tmp` is `%TEMP%`; on Windows a trailing dot or space in a folder name no longer hides it.
+- **Fixed (R-34):** `cp`/`mv`/`tee`/`Copy-Item` into a folder outside the project was not judged.
+
 ## 0.6.0 — 2026-11-28
 
 - **Records in month folders** (ADR-0015): numbered records go into `MM-YYYY/`; an ISSUE is a folder (`issue.md` +
