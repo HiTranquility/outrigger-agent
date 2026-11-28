@@ -10,7 +10,8 @@ from .shell import WRAPPERS, base, strip_heredocs
 from .common import CD, COPY_LIKE, DELETE, Finding, INSTALLERS, MOVE_LIKE, NET, NET_OUT, OUTRIGGER_CLI, READ_ONLY, SCHEDULE, SYSTEM_HIGH, _as_path
 from .packrules import _pack_asks, _pack_run
 from .quarantine import check_quarantine
-from .scripts import _npm_script, _script_files, _staged_secrets
+from .scripts import _npm_script, _script_files, _staged_secrets, _worktree_secrets
+from .structure import staged_findings as _structure_findings
 from .common import worst  # noqa: F401 — re-exported for decide.py
 from .quarantine import quarantine_touch, is_recon  # noqa: F401 — re-exported for decide.py
 
@@ -21,9 +22,9 @@ APPS = {"start", "start-process", "saps", "explorer", "invoke-item", "ii", "code
 UPLOAD_FLAGS = {"-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "-f", "--form", "-t",
                 "--upload-file", "--post-data", "--post-file", "-body", "-infile"}
 UPLOAD_METHODS = {"post", "put", "patch", "delete"}
-OUTRIGGER_HUMAN_ONLY = re.compile(r"cli\.py[\"']?\s+(?:-\S+\s+)*(approve|resume|empty-trash|deny|trust|untrust|rule\s+accept)\b",
+OUTRIGGER_HUMAN_ONLY = re.compile(r"cli\.py[\"']?\s+(?:-\S+\s+)*(approve|resume|empty-trash|deny|trust|untrust|rule\s+accept|[\"']?structure[\"']?(?:\s+[^\s;&|]+)*?\s+[\"']?--se\w*)\b",
                                   re.IGNORECASE)
-OUTRIGGER_SELF = re.compile(r"\.outrigger[\\/](engine|state|outrigger\.toml|local[\\/]notify\.toml)|\.claude[\\/]settings"
+OUTRIGGER_SELF = re.compile(r"\.outrigger[\\/](engine|state|outrigger\.toml|local[\\/]notify\.toml|local[\\/]structure-baseline\.json)|\.claude[\\/]settings"
                        r"|\.mcp\.json|\.codex[\\/]|\.agents[\\/]hooks\.json|\.cursor[\\/]hooks\.json", re.IGNORECASE)
 PIPE_TO_SHELL = re.compile(r"(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^|\n]*\|\s*"
                            r"(sudo\s+)?(sh|bash|zsh|python3?|iex|invoke-expression|pwsh|powershell)\b", re.IGNORECASE)
@@ -89,6 +90,7 @@ def check_raw(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
             out.append(Finding("high", "write-protected", f"redirects output into `{rel}` ({cfg.zone_of(rel)} zone)"))
     if re.search(r"base64\s+(-d|--decode)[^|\n]*\|\s*(sh|bash)", command, re.IGNORECASE):
         out.append(Finding("high", "encoded-exec", "decoded payload piped into a shell"))
+    out.extend(_add_then_commit(segments, cfg, cwd))
     if PY_INLINE.search(command) and PY_DELETE.search(command):   # `-c` and, from 0.3.4, a heredoc fed to python
         out.append(Finding("medium", "delete-redirect", "inline python deletes files — use `cli.py trash`"))
     return out
@@ -224,9 +226,11 @@ def check_segment(seg: list[str], cfg: Config, cwd: Path, depth: int = 0) -> lis
             out.append(Finding("high", "schedule", "creates or changes a scheduled task"))
 
     if head == "git":
-        out.extend(_git(low))
-        if low[:1] == ["commit"]:
-            out.extend(_staged_secrets(low, cfg, cwd))
+        sub, gcwd = _git_split(args, cwd)   # `git -C dir -c k=v push --force` is still a force push
+        out.extend(_git(sub))
+        if sub[:1] == ["commit"]:
+            out.extend(_staged_secrets(sub, cfg, gcwd))
+            out.extend(_structure_findings(sub, cfg, gcwd))   # ADR-0015, opt-in via [structure] enabled
 
     if head in DELETE or (head == "find" and ("-delete" in low or "-exec" in low and any(base(a) in DELETE for a in args))):
         out.append(_delete(args, cfg, cwd))
@@ -258,6 +262,60 @@ def check_segment(seg: list[str], cfg: Config, cwd: Path, depth: int = 0) -> lis
         if head in pack.commands:
             out.extend(_pack_run(pack, seg, low, cfg, cwd))
 
+    return out
+
+
+GIT_GLOBAL_VALUE = {"-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix", "--exec-path"}
+
+
+def _git_split(args: list[str], cwd: Path) -> tuple[list[str], Path]:
+    """Skip git's global options (`-C <dir>`, `-c k=v`, `--git-dir …`, `--no-pager`, `-p` …); return the lower-cased
+    subcommand with its arguments and the directory git will run in (`-C` may repeat and is relative)."""
+    i, gcwd, git_dir, work_tree = 0, cwd, None, None
+    while i < len(args):
+        a = args[i]
+        if a == "-C" and i + 1 < len(args):
+            gcwd = _as_path(args[i + 1], gcwd)
+            i += 2
+            continue
+        key, eq, val = a.partition("=")
+        if key.lower() in GIT_GLOBAL_VALUE:
+            if not eq:
+                val = args[i + 1] if i + 1 < len(args) else ""
+            if key.lower() == "--git-dir":
+                git_dir = _as_path(val, gcwd)
+            elif key.lower() == "--work-tree":
+                work_tree = _as_path(val, gcwd)
+            i += 1 if eq else 2
+            continue
+        if a.startswith("-"):
+            i += 1
+            continue
+        break
+    if work_tree is not None:                # the files a commit carries live in the work tree
+        gcwd = work_tree
+    elif git_dir is not None:
+        gcwd = git_dir.parent if git_dir.name.lower() == ".git" else git_dir
+    return [x.lower() for x in args[i:]], gcwd
+
+
+def _add_then_commit(segments: list[list[str]], cfg: Config, cwd: Path) -> list[Finding]:
+    """`git add x && git commit` in one command: the guard runs before `git add`, so the index does not hold the new
+    content yet. Judge what is on disk instead (secrets and, when on, file size)."""
+    staged_before, cur = False, cwd
+    out: list[Finding] = []
+    for seg in segments:
+        if seg and base(seg[0]) in CD and len(seg) > 1:      # `cd nested && git add … && git commit`
+            cur = _as_path(seg[1], cur)
+            continue
+        if not seg or base(seg[0]) != "git":
+            continue
+        sub, gcwd = _git_split(seg[1:], cur)
+        if sub[:1] in (["add"], ["stage"], ["mv"], ["rm"], ["apply"], ["update-index"]):
+            staged_before = True
+        elif sub[:1] == ["commit"] and staged_before:
+            out.extend(_worktree_secrets(cfg, gcwd))
+            out.extend(_structure_findings(sub, cfg, gcwd, force_disk=True, untracked=True))
     return out
 
 

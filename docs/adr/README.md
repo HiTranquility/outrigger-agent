@@ -18,3 +18,4 @@ Never delete an ADR. To change a decision, write a new ADR and mark the old one 
 | [0012](0012-recon-quarantine-and-content-check.md) | Recon: read someone else's code in quarantine; check what tools return |
 | [0013](0013-pack-gui-always-ask.md) | A pack can make opening its app ask in light mode too (licence seats) — amends 0009 |
 | [0014](0014-pack-ask-commands.md) | A pack can list commands that must always be asked about (`[[ask]]`: schema migrations, data drops) |
+| [0015](0015-records-in-month-folders-and-structure-gate.md) | Records in month folders, ISSUE as a folder, `next-id` across branches, opt-in structure gate on `git commit` — amends 0009 |

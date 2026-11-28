@@ -14,7 +14,7 @@ DEFAULTS: dict = {
         "red": [".env", ".env.*", "**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.pfx",
                 "**/id_rsa*", "**/credentials.json", "**/token.txt", "**/secretkeys/**"],
         "red_allow": ["**/.env.example", ".env.example"],
-        "protected": [".outrigger/engine/**", ".outrigger/outrigger.toml", ".outrigger/OUTRIGGER.md", ".outrigger/rules/**", ".outrigger/packs/**", ".outrigger/state/**", ".outrigger/local/notify.toml",
+        "protected": [".outrigger/engine/**", ".outrigger/outrigger.toml", ".outrigger/OUTRIGGER.md", ".outrigger/rules/**", ".outrigger/packs/**", ".outrigger/state/**", ".outrigger/local/notify.toml", ".outrigger/local/structure-baseline.json",
                       ".claude/settings.json", ".claude/settings.local.json", ".mcp.json", "stop"],
         # 0.3.1 (ADR-0010): append-only zone for source material the project must never change (scans, exports,
         # interview transcripts). A NEW file may be created there; no byte of an existing file may change.

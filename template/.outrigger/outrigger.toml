@@ -8,7 +8,7 @@ name = ""                      # empty = folder name; shown in notifications
 [zones]
 green = [
   "sandbox/**", "reports/**", "docs/decisions/**", ".outrigger/local/workflows/drafts/**",
-  "docs/requirements/**", "docs/postmortems/**", "docs/meetings/**", "docs/RISK.md",
+  "docs/requirements/**", "docs/postmortems/**", "docs/meetings/**", "docs/RISK.md", "docs/issues/**",
 ]
 red = [
   ".env", ".env.*", "**/.env", "**/.env.*",
@@ -21,6 +21,7 @@ quarantine = ["sandbox/quarantine/**"]
 red_allow = ["**/.env.example", ".env.example"]
 protected = [
   ".outrigger/engine/**", ".outrigger/outrigger.toml", ".outrigger/OUTRIGGER.md", ".outrigger/rules/**", ".outrigger/packs/**", ".outrigger/state/**", ".outrigger/local/notify.toml",
+  ".outrigger/local/structure-baseline.json",
   ".claude/settings.json", ".claude/settings.local.json", ".mcp.json",
   ".codex/**", ".agents/hooks.json", ".cursor/hooks.json", "stop",
 ]
@@ -87,3 +88,15 @@ cheap = "lookup, comparison, classification, summaries, reading logs"
 # claude = { strongest = "", balanced = "", fast = "", cheap = "" }
 # codex  = { strongest = "", balanced = "", fast = "", cheap = "" }
 # gemini = { strongest = "", balanced = "", fast = "", cheap = "" }
+
+[structure]
+# 0.6.0 (ADR-0015): file-size ratchet. Off until YOU switch it on:
+#   1. python .outrigger/engine/cli.py structure --seed    (human only: records files already too big)
+#   2. set enabled = true                                   (then `git commit` asks when a file grows)
+# A file in the baseline may only shrink; the agent may run `cli.py structure --update` to lower it.
+enabled = false
+max_lines = 400
+max_use_state = 10
+max_ctor_deps = 6
+# include / exclude = [...]  — glob lists; the defaults cover common source files and skip tests, generated
+# code, migrations, locales and build folders (see engine/outrigger/structure.py DEFAULTS).

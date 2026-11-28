@@ -4,18 +4,20 @@
 | :-- | :-- | :-- | :-- |
 | GATE | before any gated action | in chat (copy it into the report) | `GATE.md` |
 | REPORT | end of every work turn | `reports/YYYY-MM-DD/HHMM-<slug>.md` | `REPORT.md` |
-| ADR | the user chooses between alternatives, or you pick between real alternatives mid-task | `docs/decisions/ADR-NNNN-<slug>.md` | `ADR.md` |
+| ADR | the user chooses between alternatives, or you pick between real alternatives mid-task | `docs/decisions/MM-YYYY/ADR-NNNN-<slug>.md` | `ADR.md` |
 | SPIKE | safe probe of an unknown task | `sandbox/spikes/SPIKE-NNN-<slug>/README.md` | `SPIKE.md` |
 | WORKFLOW | a repeatable procedure | drafts: `.outrigger/local/workflows/drafts/`; approved: `.outrigger/local/workflows/` | `WORKFLOW.md` |
-| BUG | a defect outside the current task | `reports/bugs/BUG-NNN-<slug>.md` | `BUG.md` |
-| REQ | a new request that is more than a quick fix — **before** building | `docs/requirements/REQ-NNN-<slug>.md` | `REQ.md` |
+| BUG | a defect outside the current task | `reports/bugs/MM-YYYY/BUG-NNN-<slug>.md` | `BUG.md` |
+| REQ | a new request that is more than a quick fix — **before** building | `docs/requirements/MM-YYYY/REQ-NNN-<slug>.md` | `REQ.md` |
+| ISSUE | an agreed REQ is broken into work that spans more than one turn | `docs/issues/MM-YYYY/ISSUE-NNN-<slug>/issue.md` (a **folder**) | `ISSUE.md` |
+| PHASE | one risk-sized step of an ISSUE | `docs/issues/MM-YYYY/ISSUE-NNN-<slug>/phase/phase-N.md` | `PHASE.md` |
 | HANDOFF | a session ends with work unfinished, or the task passes to someone else | `reports/YYYY-MM-DD/handoff-<slug>.md` | `HANDOFF.md` |
 | STATUS | the user asks for a weekly / periodic summary | `reports/status/YYYY-MM-DD.md` | `STATUS.md` |
-| POSTMORTEM | something was lost, leaked or broken — or nearly was | `docs/postmortems/PM-NNN-<slug>.md` | `POSTMORTEM.md` |
+| POSTMORTEM | something was lost, leaked or broken — or nearly was | `docs/postmortems/MM-YYYY/PM-NNN-<slug>.md` | `POSTMORTEM.md` |
 | RISK | once per project; reviewed at each phase change | `docs/RISK.md` | `RISK.md` |
 | MEETING | the user gives meeting notes or a transcript | `docs/meetings/YYYY-MM-DD-<slug>.md` | `MEETING.md` |
 
-Which one? idea or request → REQ · choice made → ADR · unknown territory → SPIKE · work done → REPORT · work
+Which one? idea or request → REQ · agreed work over several turns → ISSUE (+ PHASE) · choice made → ADR · unknown territory → SPIKE · work done → REPORT · work
 unfinished → HANDOFF · something went wrong → POSTMORTEM (and a BUG if code is at fault) · could go wrong → RISK.
 Do not invent a new document format: if none fits, ask the user, then draft a template in `.outrigger/local/`.
 
@@ -34,7 +36,12 @@ Remove detours the user confirms were detours. Never promote a draft yourself.
 When the task **did** follow a workflow and something changed (a step added, a gate that turned out routine), add a
 row to that workflow's *Changelog* instead of capturing a new one.
 
-- Numbers (`NNNN`, `NNN`) continue from the highest existing file of that type; never reuse one.
+- **Folders (0.6.0, ADR-0015).** Numbered records go into a month folder `MM-YYYY/` of the month they were created;
+  an ISSUE is a folder: only `issue.md` at its top, then `phase/`, `review/` (`review-N.md`), `handoff/`, `evidence/`.
+  Records written before 0.6.0 stay where they are (flat); do not move them.
+- Numbers (`NNNN`, `NNN`): take them from `python .outrigger/engine/cli.py next-id <ADR|REQ|ISSUE|BUG|SPIKE|PM>` —
+  it counts every month folder **and** every branch (a record on an unmerged branch is invisible otherwise).
+  Never reuse a number; a `WARN … used twice` line means two records share one — tell the user.
 - Search for an existing record on the same topic before creating a new one.
 - The guard writes machine logs: `.outrigger/state/logs/audit-YYYY-MM.jsonl`, `trace-YYYY-MM.jsonl` (every call,
   redacted, local only — the source for `capture`), `apps.jsonl`, and a daily

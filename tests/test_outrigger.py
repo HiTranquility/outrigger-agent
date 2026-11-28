@@ -1119,7 +1119,8 @@ class RegisterIntegrity(unittest.TestCase):
         named = set(re.findall(r"`([A-Z]\w+)\.(test_\w+)`", text))
         self.assertTrue(named)
         import test_group1
-        classes = {**globals(), **vars(test_group1)}
+        import test_group2
+        classes = {**globals(), **vars(test_group1), **vars(test_group2)}
         missing = [f"{c}.{t}" for c, t in named if not hasattr(classes.get(c), t)]
         self.assertEqual(missing, [])
 

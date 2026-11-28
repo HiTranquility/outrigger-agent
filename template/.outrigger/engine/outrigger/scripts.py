@@ -167,3 +167,41 @@ def _staged_secrets(low: list[str], cfg: Config, cwd: Path) -> list[Finding]:
     shown = "; ".join(hits[:6]) + (f"; … +{len(hits) - 6} more" if len(hits) > 6 else "")
     return [Finding("high", "secret-commit",
                     f"the commit would put secrets into git history: {shown}. Remove them (and rotate the key if it was real)")]
+
+
+def _worktree_secrets(cfg: Config, cwd: Path) -> list[Finding]:
+    """Secrets in changed or new files on disk (used when `git add` runs in the same command as `git commit`)."""
+    try:
+        top_r = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=20)
+        if top_r.returncode != 0:
+            return []                        # not a repository: git itself will refuse the commit
+        top = Path(top_r.stdout.strip())
+        names: set[str] = set()
+        for cmd in (["git", "diff", "--name-only", "-z"], ["git", "diff", "--cached", "--name-only", "-z"],
+                    ["git", "ls-files", "--others", "--exclude-standard", "-z"]):
+            r = subprocess.run(cmd, cwd=top, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               timeout=20)
+            if r.returncode != 0:
+                return [Finding("medium", "secret-scan-failed", "could not list the files `git add` would stage")]
+            names |= {n for n in r.stdout.split("\0") if n}
+    except (OSError, subprocess.SubprocessError) as exc:
+        return [Finding("medium", "secret-scan-failed", f"could not check the commit for secrets ({type(exc).__name__})")]
+    hits: list[str] = []
+    for name in sorted(names):
+        if cfg.zone_of(name) == "red":
+            hits.append(f"{name} (secret file)")
+            continue
+        path = top / name
+        if not path.is_file() or path.stat().st_size > MAX_SCRIPT_BYTES:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for label, pat in SECRET_COMMIT:
+            if pat.search(text):
+                hits.append(f"{name} ({label})")
+    hits = sorted(set(hits))
+    if not hits:
+        return []
+    shown = "; ".join(hits[:6]) + (f"; … +{len(hits) - 6} more" if len(hits) > 6 else "")
+    return [Finding("high", "secret-commit", f"`git add` then commit would put secrets into git history: {shown}. "
+                    "Remove them (and rotate the key if it was real)")]
