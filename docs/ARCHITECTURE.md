@@ -68,7 +68,11 @@ outrigger-agent/
 │       │   ├── cli.py              ← human + agent commands, selftest CASES
 │       │   └── outrigger/
 │       │       ├── decide.py       ← tool call → Decision (§2)
-│       │       ├── rules.py        ← shell rules, script reading, quarantine, git, network, delete
+│       │       ├── rules.py        ← check_raw / check_segment: git, network, delete, self-guard, writes
+│       │       ├── common.py       ← Finding, risk order, command-name sets and patterns (no logic deps)
+│       │       ├── quarantine.py   ← what may touch sandbox/quarantine/** (ADR-0012)
+│       │       ├── packrules.py    ← pack-declared asks, runners, targets (ADR-0013, ADR-0014)
+│       │       ├── scripts.py      ← .sh/.ps1/.bat, package.json scripts, staged secrets (calls back into rules)
 │       │       ├── shell.py        ← command splitter (bash + PowerShell heuristics)
 │       │       ├── config.py       ← outrigger.toml + defaults, zones, packs, project root
 │       │       ├── packs.py        ← scan code a pack's tool will run (MATLAB .m, .py, .js…)
@@ -124,7 +128,7 @@ your-project/
 
 | To add | Touch | Must also |
 | :-- | :-- | :-- |
-| A guard rule | `rules.py` or `decide.py` | test in `tests/test_outrigger.py`, selftest case if user-visible, RISK_REGISTER row |
+| A guard rule | `rules.py` (or the module of its concern: `scripts.py`, `quarantine.py`, `packrules.py`), `decide.py`; shared names go to `common.py` | test in `tests/test_outrigger.py`, selftest case if user-visible, RISK_REGISTER row |
 | Support for a tool (MATLAB, R…) | a pack: `pack.toml` (+ workflows) | `PACK_CASES` in `cli.py` for selftest |
 | A user's own way of working | `.outrigger/local/workflows/` (builder or `capture`) | nothing in the engine |
 | Another agent platform | `hook.py` adapter (Codex, Gemini, Cursor: planned) | live check on that platform |
