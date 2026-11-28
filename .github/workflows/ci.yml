@@ -1,0 +1,37 @@
+name: CI
+
+# Engine tests + selftest on Linux and Windows, oldest and newest supported Python. Stdlib only: nothing to install.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Git identity for tests that commit
+        run: |
+          git config --global user.email "ci@example.org"
+          git config --global user.name "ci"
+      - name: Unit tests
+        run: python -X utf8 -m unittest discover -s tests
+      - name: Selftest
+        working-directory: template
+        run: python -X utf8 .outrigger/engine/cli.py selftest
