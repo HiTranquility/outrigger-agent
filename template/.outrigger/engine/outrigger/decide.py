@@ -41,6 +41,7 @@ MEMORY_SUSPICIOUS = re.compile(
 #   leaves the machine / installs git-push · install
 #   costs a licence seat          app-ask (a pack's `gui_always_ask = true`, ADR-0013)
 #   weakens the guard later       memory-suspicious · agent-config
+#   grows a file that may only shrink   structure-grow · structure-check-failed (ADR-0015, opt-in)
 # Everything else at medium risk (write-outside, net-unknown, app, mcp-risky, git-branch, git-stash, git-clone,
 # secret-search) is ALLOWED in light mode, logged, and listed in the daily summary.
 LIGHT_STILL_ASK = {
@@ -51,6 +52,7 @@ LIGHT_STILL_ASK = {
     "pack-ask",  # 0.5.0 (ADR-0014): a command a pack declared must always be asked about (schema migration, DB drop)
     "app-ask",   # 0.4.1 (ADR-0013): a pack declared that opening its app must always ask (licence seats)
     "memory-suspicious", "agent-config",
+    "structure-grow", "structure-check-failed",  # 0.6.0 (ADR-0015): file-size ratchet on git commit, opt-in
 }
 PACK_ALWAYS = {"pack-ask", "app-ask"}
 # Tools that only CREATE a file when it does not exist yet (append-only originals zone, ADR-0010). Edit-style tools

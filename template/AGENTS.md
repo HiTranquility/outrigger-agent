@@ -64,7 +64,10 @@ To study someone else's repo: `cli.py recon <url>` and read it in quarantine (`.
   result · what ran · evidence · bugs · open questions · next steps · **what was not done or not verified**.
 - A request bigger than a quick fix starts with a REQ (verbatim request + 3–5 "done means" criteria); a session
   that ends unfinished leaves a HANDOFF; a loss or near miss gets a POSTMORTEM. Templates and paths: `.outrigger/rules/records.md`.
-- A decision with alternatives (including the user's choice at a GATE) → `docs/decisions/ADR-NNNN-*.md`
+- Numbered records live in month folders and take their number from `cli.py next-id <TYPE>`; an ISSUE is a
+  folder (`issue.md` + `phase/`, `review/`, `handoff/`, `evidence/`) — `.outrigger/rules/records.md`.
+- `git commit` asks when a file grows past the structure limits (opt-in, ADR-0015): split it, do not argue.
+- A decision with alternatives (including the user's choice at a GATE) → `docs/decisions/MM-YYYY/ADR-NNNN-*.md`
   from `.outrigger/templates/ADR.md`, written **in the same turn** the user decides.
 - Session start lists **standing-rule suggestions** (the user approved the same kind of action 3+ times)? Tell the
   user once, with the line they can run: `cli.py rule accept L-…`. Never accept one yourself, never argue for it.

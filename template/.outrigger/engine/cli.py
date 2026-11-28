@@ -2,7 +2,8 @@
 """Outrigger command line.  python .outrigger/engine/cli.py <command> ...
 
 Agent may use:  status · pending · trash · trash-list · restore · archive · stop · scan · recon · capture · notify-test · selftest
-Human only:     approve · deny · resume · empty-trash · trust · untrust · rule accept   (the guard blocks the agent)
+                next-id · structure [--update]
+Human only:     approve · deny · resume · empty-trash · trust · untrust · rule accept · structure --seed   (the guard blocks the agent)
 Anyone:         rule list · rule drop   (dropping a rule only makes the guard stricter)
 """
 from __future__ import annotations
@@ -14,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from outrigger import __version__, config, learn, notify, packs, state  # noqa: E402
+from outrigger import __version__, config, learn, notify, packs, records, state, structure  # noqa: E402
 from outrigger.decide import decide  # noqa: E402
 
 
@@ -361,6 +362,50 @@ PACK_CASES = {  # only checked when the pack is installed
 }
 
 
+def cmd_next_id(a) -> int:
+    """0.6.0 (ADR-0015): next free record number, counted across month folders and git branches."""
+    try:
+        rid, warnings = records.next_id(_cfg(), a.kind)
+    except ValueError as exc:
+        print(exc)
+        return 2
+    for w in warnings:
+        print(f"WARN {w}")
+    print(rid)
+    return 0
+
+
+def cmd_structure(a) -> int:
+    """0.6.0 (ADR-0015): file-size ratchet. --seed (human, once) · default: check · --update (only lowers)."""
+    cfg = _cfg()
+    s = structure.settings(cfg)
+    try:
+        baseline = structure.read_baseline(cfg)
+        current = structure.measure_project(cfg)
+    except structure.StructureError as exc:
+        print(f"ERROR {exc}")
+        return 1
+    if a.seed:
+        if (cfg.root / structure.BASELINE_REL).is_file():
+            print(f"ERROR {structure.BASELINE_REL} exists; use --update to lower it, never seed again")
+            return 1
+        structure.write_baseline(cfg, current)
+        print(f"OK seeded {len(current)} files. Switch the commit gate on with [structure] enabled = true")
+        return 0
+    if a.update and not (cfg.root / structure.BASELINE_REL).is_file():
+        print("ERROR no baseline yet: the human seeds it once with `cli.py structure --seed`")
+        return 1
+    errors, lowered = structure.compare(current, baseline, s, a.update)
+    for e in errors:
+        print(f"ERROR {e}")
+    if a.update and not errors:
+        structure.write_baseline(cfg, lowered)
+        print(f"OK updated: {len(lowered)} files in the baseline")
+    elif not errors:
+        print(f"OK {len(baseline)} files in the baseline, nothing grew" + ("" if s["enabled"] else " (gate off)"))
+    return 1 if errors else 0
+
+
 def cmd_selftest(a) -> int:
     ok = True
     print(f"Python {sys.version.split()[0]} {'OK' if sys.version_info >= (3, 11) else 'TOO OLD (need 3.11+)'}")
@@ -440,6 +485,9 @@ def main() -> int:
     p.add_argument("--ref", help="branch or tag to clone (default: the repository's default branch)")
     p.set_defaults(fn=cmd_recon)
     sub.add_parser("notify-test").set_defaults(fn=cmd_notify_test)
+    p = sub.add_parser("next-id"); p.add_argument("kind", help="ADR · REQ · ISSUE · BUG · SPIKE · PM"); p.set_defaults(fn=cmd_next_id)
+    p = sub.add_parser("structure", allow_abbrev=False); g = p.add_mutually_exclusive_group()   # `--se` must not mean --seed
+    g.add_argument("--update", action="store_true"); g.add_argument("--seed", action="store_true"); p.set_defaults(fn=cmd_structure)
     p = sub.add_parser("selftest"); p.add_argument("-v", "--verbose", action="store_true"); p.set_defaults(fn=cmd_selftest)
     a = ap.parse_args()
     return a.fn(a)

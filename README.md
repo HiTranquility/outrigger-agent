@@ -7,7 +7,7 @@ An outrigger is the float lashed beside a canoe: it lets a narrow, fast hull tak
 Outrigger does the same for AI coding agents that people run with **bypass all permissions**: the agent keeps its
 speed, and the human keeps the helm.
 
-> **Status: 0.5.0, early.** Enforcement works on Claude Code today. Codex, Antigravity/Gemini and Cursor read the
+> **Status: 0.6.0, early.** Enforcement works on Claude Code today. Codex, Antigravity/Gemini and Cursor read the
 > rules but are not yet enforced by a hook (adapters planned). Read [Honest limits](#honest-limits) before relying on it.
 
 ## What it does
@@ -20,7 +20,8 @@ speed, and the human keeps the helm.
 | ✋ | You decide at every turning point | The agent offers 2–4 options with a **cost level** and waits. A blocked action gets an id; only *you* can approve it, from *your* terminal, once, for that exact input (SHA-256) |
 | 💸 | No surprise costs | Cost = permission levels: **L0** read → **L1** headless run → **L2** open an app → **L3** network / install / schedule. Cheapest level first |
 | 🗑️ | Nothing is lost | "Delete" is a restorable trash with a SHA-256 manifest; files outside the sandbox are backed up before every edit; ADRs and postmortems are never deleted |
-| 📝 | Every turn leaves a trail | 12 record templates (request, gate, report, ADR, hand-off, postmortem, risk…), a machine log of every block, approval and app launch |
+| 📝 | Every turn leaves a trail | 14 record templates (request, issue + phases, gate, report, ADR, hand-off, postmortem, risk…) in month folders, numbered by `cli.py next-id` across folders **and** branches; a machine log of every block, approval and app launch |
+| 📏 | Files do not grow into god files | Opt-in structure gate (ADR-0015): on `git commit`, a new file over 400 lines / 10 `useState` / 6 constructor dependencies, or a file that grew past its baseline, asks — even in light mode. Files already too big may only shrink |
 | 🧠 | Agent memory is watched | Memory writes are logged and backed up; a note like "approve automatically next time" needs your approval, and so do global agent config files |
 | 📱 | You are told | High-risk blocks send a desktop notification or a phone push (ntfy) carrying only risk, project and id — never your data |
 | 🪶 | It asks only when it matters | **Light mode** (default from 0.3.0): high risk, untrusted scripts with dangerous calls, deletes, installs and pushes stop and wait; other medium risk runs and is listed in the daily log. A pack can make opening its app ask in light mode too (`gui_always_ask`, e.g. MATLAB licence seats), and list commands that must always ask (`[[ask]]`, e.g. schema migrations and `docker compose down -v`). `[approvals] mode = "strict"` asks for every medium risk |

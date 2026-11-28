@@ -1,87 +1,36 @@
 """Risk rules for shell commands. Each rule returns Findings; the decision takes the worst one."""
 from __future__ import annotations
 
-import os
 import re
-from dataclasses import dataclass
-import json
-import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import packs, state
 from .config import Config
-from .shell import WRAPPERS, ParseError, base, split_commands, strip_heredocs
+from .shell import WRAPPERS, base, strip_heredocs
+from .common import CD, COPY_LIKE, DELETE, Finding, INSTALLERS, MOVE_LIKE, NET, NET_OUT, OUTRIGGER_CLI, READ_ONLY, SCHEDULE, SYSTEM_HIGH, _as_path
+from .packrules import _pack_asks, _pack_run
+from .quarantine import check_quarantine
+from .scripts import _npm_script, _script_files, _staged_secrets, _worktree_secrets
+from .structure import staged_findings as _structure_findings
+from .common import worst  # noqa: F401 — re-exported for decide.py
+from .quarantine import quarantine_touch, is_recon  # noqa: F401 — re-exported for decide.py
 
-RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
-
-
-@dataclass
-class Finding:
-    risk: str
-    code: str
-    reason: str
-    app: str | None = None
-
-
-DELETE = {"rm", "del", "erase", "rd", "rmdir", "remove-item", "ri", "unlink", "shred", "srm", "trash-put", "rimraf"}
-READ_ONLY = {"cat", "type", "get-content", "gc", "less", "more", "head", "tail", "grep", "rg", "findstr",
-             "select-string", "ls", "dir", "get-childitem", "gci", "wc", "stat", "file", "test-path", "echo",
-             # 0.3.1 (ADR-0010 C): comparing files changes nothing — a `diff` of two engines was blocked as high risk
-             "diff", "cmp", "comm", "fc", "compare-object", "sha256sum", "md5sum", "get-filehash"}
-# Commands that write their path arguments (ADR-0010 A). Before 0.3.1 only `>` redirects into protected zones were
-# checked, so `cp x protected/y` passed. MOVE-like commands also change their source; COPY-like ones only the target.
-MOVE_LIKE = {"mv", "move", "move-item", "mi", "rename-item", "rni", "ren", "rename"}
-COPY_LIKE = {"cp", "copy", "copy-item", "cpi", "xcopy", "robocopy", "install", "ln"}
 WRITE_ALL = {"tee", "touch", "truncate", "set-content", "add-content", "out-file", "new-item", "ni", "clear-content"}
 HELP_FLAGS = {"-h", "--help", "/?"}
-SYSTEM_HIGH = {"format", "diskpart", "bcdedit", "shutdown", "restart-computer", "stop-computer", "regedit",
-               "set-mppreference", "add-mppreference", "vssadmin", "mkfs", "dd", "runas", "su", "takeown",
-               "set-executionpolicy", "cipher", "__sudo__", "iex", "invoke-expression", "__encoded__"}
-SCHEDULE = {"schtasks", "register-scheduledtask", "set-scheduledtask", "unregister-scheduledtask",
-            "new-scheduledtask", "new-scheduledtasktrigger", "new-scheduledtaskaction", "crontab", "at", "launchctl"}
-NET = {"curl", "wget", "invoke-webrequest", "iwr", "invoke-restmethod", "irm", "bitsadmin",
-       "start-bitstransfer", "certutil"}
-NET_OUT = {"scp", "sftp", "ftp", "rsync", "nc", "ncat", "telnet", "ssh"}
-INSTALLERS = {
-    "pip": {"install"}, "pip3": {"install"}, "uv": {"add", "pip"}, "pipx": {"install"},
-    "npm": {"install", "i", "add"}, "pnpm": {"add", "install", "i"}, "yarn": {"add", "install"},
-    "bun": {"add", "install", "i"}, "winget": {"install", "upgrade"}, "choco": {"install", "upgrade"},
-    "scoop": {"install"}, "conda": {"install", "create"}, "mamba": {"install"}, "apt": {"install"},
-    "apt-get": {"install"}, "brew": {"install"}, "gem": {"install"}, "cargo": {"install"},
-    "install-module": None, "install-package": None, "npx": None,
-}
 APPS = {"start", "start-process", "saps", "explorer", "invoke-item", "ii", "code", "notepad", "open",
         "xdg-open", "simulink", "msedge", "chrome", "firefox"}
 UPLOAD_FLAGS = {"-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "-f", "--form", "-t",
                 "--upload-file", "--post-data", "--post-file", "-body", "-infile"}
 UPLOAD_METHODS = {"post", "put", "patch", "delete"}
-OUTRIGGER_HUMAN_ONLY = re.compile(r"cli\.py[\"']?\s+(?:-\S+\s+)*(approve|resume|empty-trash|deny|trust|untrust|rule\s+accept)\b",
+OUTRIGGER_HUMAN_ONLY = re.compile(r"cli\.py[\"']?\s+(?:-\S+\s+)*(approve|resume|empty-trash|deny|trust|untrust|rule\s+accept|[\"']?structure[\"']?(?:\s+[^\s;&|]+)*?\s+[\"']?--se\w*)\b",
                                   re.IGNORECASE)
-OUTRIGGER_SELF = re.compile(r"\.outrigger[\\/](engine|state|outrigger\.toml|local[\\/]notify\.toml)|\.claude[\\/]settings"
+OUTRIGGER_SELF = re.compile(r"\.outrigger[\\/](engine|state|outrigger\.toml|local[\\/]notify\.toml|local[\\/]structure-baseline\.json)|\.claude[\\/]settings"
                        r"|\.mcp\.json|\.codex[\\/]|\.agents[\\/]hooks\.json|\.cursor[\\/]hooks\.json", re.IGNORECASE)
 PIPE_TO_SHELL = re.compile(r"(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^|\n]*\|\s*"
                            r"(sudo\s+)?(sh|bash|zsh|python3?|iex|invoke-expression|pwsh|powershell)\b", re.IGNORECASE)
 PY_DELETE = re.compile(r"shutil\.rmtree|os\.(remove|unlink|rmdir)|Path\([^)]*\)\.unlink|\.rmdir\(", re.IGNORECASE)
 ROOTLIKE = {"/", "\\", "~", "~/", "*", "/*", ".", "./", "..", "../", "c:", "c:\\", "c:/", "$home", "%userprofile%"}
-
-
-def worst(findings: list[Finding]) -> str:
-    return max((f.risk for f in findings), key=RISK_ORDER.get, default="low")
-
-
-OUTRIGGER_CLI = re.compile(r"\.outrigger[\\/]engine[\\/]cli\.py", re.IGNORECASE)
 REDIRECT_TARGET = re.compile(r"(?:^|[^<0-9&])\d?>>?\s*(\"[^\"]+\"|'[^']+'|[^\s;&|]+)")
-
-
-CD = {"cd", "pushd", "set-location", "sl", "chdir"}
-MSYS_DRIVE = re.compile(r"^/([a-zA-Z])(/|$)")
-
-
-def _as_path(token: str, cwd: Path) -> Path:
-    p = MSYS_DRIVE.sub(lambda m: m.group(1) + ":/", token.strip("\"'"))   # Git Bash: /c/Users -> c:/Users
-    p = Path(os.path.expandvars(os.path.expanduser(p)))
-    return p if p.is_absolute() else cwd / p
 
 
 def _self_hit(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -> str | None:
@@ -141,6 +90,7 @@ def check_raw(command: str, segments: list[list[str]], cfg: Config, cwd: Path) -
             out.append(Finding("high", "write-protected", f"redirects output into `{rel}` ({cfg.zone_of(rel)} zone)"))
     if re.search(r"base64\s+(-d|--decode)[^|\n]*\|\s*(sh|bash)", command, re.IGNORECASE):
         out.append(Finding("high", "encoded-exec", "decoded payload piped into a shell"))
+    out.extend(_add_then_commit(segments, cfg, cwd))
     if PY_INLINE.search(command) and PY_DELETE.search(command):   # `-c` and, from 0.3.4, a heredoc fed to python
         out.append(Finding("medium", "delete-redirect", "inline python deletes files — use `cli.py trash`"))
     return out
@@ -227,117 +177,10 @@ def _guarded_writes(head: str, args: list[str], cfg: Config, cwd: Path) -> list[
         if rel is not None and cfg.zone_of(rel) in {"protected", "originals"}:
             out.append(Finding("high", "write-protected", f"`{head}` changes `{rel}` ({cfg.zone_of(rel)} zone)"))
     return out
-
-
-# 0.4.0 (ADR-0012): code in the quarantine zone is someone else's, copied in to be READ. Reading, listing, comparing
-# and `git log` are fine; anything that would run, build, install or serve it is high risk, whatever the wording.
-QUARANTINE_READ = READ_ONLY | CD | {"find", "tree", "sort", "uniq", "cut", "jq", "xxd", "od", "hexdump", "strings",
-                                    "du", "pwd", "realpath", "basename", "dirname", "nl", "tac", "column"}
-QUARANTINE_GIT_READ = {"log", "show", "diff", "status", "rev-parse", "ls-files", "ls-tree", "blame", "grep",
-                       "cat-file", "describe", "shortlog"}
 EXEC_HEADS = WRAPPERS | {"python", "python3", "py", "node", "deno", "bun", "ruby", "perl", "php", "iex",
                          "invoke-expression", "source", ".", "npx", "pnpx", "java", "dotnet", "go", "cargo", "make",
                          "cmake", "docker", "docker-compose", "podman", "matlab", "octave", "rscript", "uv", "uvx",
                          "pipx", "poetry", "xargs"}
-
-
-def quarantine_touch(seg: list[str], cfg: Config, cwd: Path) -> bool:
-    """Does this segment run inside, or name a path inside, the quarantine zone?"""
-    zone = cfg.section("zones").get("quarantine", [])
-    if not zone or not seg:
-        return False
-    from .config import match_any
-    here = cfg.rel(cwd)
-    if here is not None and match_any(here, zone):
-        return True
-    # A path inside code text (`matlab -batch "run('sandbox/quarantine/x/a.m')"`, `python -c "...")` is not an argument
-    # of its own, so the zone's folder is also looked for as text (found by the live check with the MATLAB pack).
-    prefixes = [p.lower().split("*", 1)[0].rstrip("/") + "/" for p in zone if p.split("*", 1)[0].strip("/")]
-    for a in seg:
-        text = a.replace("\\", "/").lower()
-        if any(pre in text for pre in prefixes):
-            return True
-        if a.startswith("-") or "://" in a:
-            continue
-        rel = cfg.rel(a.strip("\"'"), cwd)
-        if rel is not None and match_any(rel, zone):
-            return True
-    return False
-
-
-ASK_RUNNERS = {"npx", "pnpx", "bunx", "pnpm", "yarn", "bun", "exec", "dlx", "uv", "uvx", "run", "poetry", "pipenv",
-               "python", "python3", "py", "-m", "bundle", "sudo"}
-
-
-def _ask_matches(toks: list[str], pattern: list[str]) -> bool:
-    """`pattern[0]` is the program, found among the first tokens so that runners (`npx`, `pnpm exec`, `uv run`,
-    `python -m`, `yarn`) do not hide it; the rest must follow in order, other words and flags may sit between."""
-    for start in range(min(4, len(toks))):
-        if toks[start] != pattern[0]:
-            if toks[start] not in ASK_RUNNERS:   # `echo prisma migrate` prints; only a runner may come first
-                return False
-            continue
-        i = start + 1
-        for want in pattern[1:]:
-            while i < len(toks) and toks[i] != want:
-                i += 1
-            if i == len(toks):
-                break
-            i += 1
-        else:
-            return True
-    return False
-
-
-def _pack_asks(seg: list[str], cfg: Config) -> list[Finding]:
-    if not seg or not cfg.asks:
-        return []
-    toks = [base(seg[0])] + [base(t) if i < 3 else t.lower() for i, t in enumerate(seg[1:])]
-    out = []
-    for ask in cfg.asks:
-        hit = next((p for p in ask.commands if _ask_matches(toks, p)), None)
-        if hit:
-            out.append(Finding(ask.risk, "pack-ask", f"{ask.reason} (`{' '.join(hit)}`, {ask.pack} pack: asks every time)"))
-    return out
-
-
-def is_recon(seg: list[str]) -> bool:
-    """`python .outrigger/engine/cli.py recon …` — the one command that may name a quarantined path to scan it."""
-    at = next((i for i, a in enumerate(seg) if base(a) == "cli.py" and OUTRIGGER_CLI.search(a.replace("\\", "/"))), None)
-    return at is not None and len(seg) > at + 1 and seg[at + 1].lower() == "recon"
-
-
-def _git_sub(low: list[str]) -> str:
-    i = 0
-    while i < len(low):
-        if low[i] in {"-c", "--git-dir", "--work-tree"}:   # `low` is lower-cased, so `-C <dir>` arrives as `-c`
-            i += 2
-            continue
-        if low[i].startswith("-"):
-            i += 1
-            continue
-        return low[i]
-    return ""
-
-
-def check_quarantine(seg: list[str], cfg: Config, cwd: Path) -> list[Finding]:
-    if not quarantine_touch(seg, cfg, cwd):
-        return []
-    head = base(seg[0])
-    low = [a.lower() for a in seg[1:]]
-    if head in QUARANTINE_READ or head in DELETE or head in MOVE_LIKE:   # delete/move: the normal rules judge them
-        return []
-    if head == "sed" and not any(a.startswith("-i") or a == "--in-place" for a in low):
-        return []
-    if head == "git" and _git_sub(low) in QUARANTINE_GIT_READ:
-        return []
-    if is_recon(seg):
-        return []
-    if head in COPY_LIKE:
-        return [Finding("medium", "quarantine-copy", "copies code out of the quarantine zone — review it before it "
-                                                     "joins the project")]
-    return [Finding("high", "quarantine-exec", f"`{head}` would run, build or install code from the quarantine zone "
-                                               "— read it, never run it (ADR-0012)")]
 
 
 def check_segment(seg: list[str], cfg: Config, cwd: Path, depth: int = 0) -> list[Finding]:
@@ -383,9 +226,11 @@ def check_segment(seg: list[str], cfg: Config, cwd: Path, depth: int = 0) -> lis
             out.append(Finding("high", "schedule", "creates or changes a scheduled task"))
 
     if head == "git":
-        out.extend(_git(low))
-        if low[:1] == ["commit"]:
-            out.extend(_staged_secrets(low, cfg, cwd))
+        sub, gcwd = _git_split(args, cwd)   # `git -C dir -c k=v push --force` is still a force push
+        out.extend(_git(sub))
+        if sub[:1] == ["commit"]:
+            out.extend(_staged_secrets(sub, cfg, gcwd))
+            out.extend(_structure_findings(sub, cfg, gcwd))   # ADR-0015, opt-in via [structure] enabled
 
     if head in DELETE or (head == "find" and ("-delete" in low or "-exec" in low and any(base(a) in DELETE for a in args))):
         out.append(_delete(args, cfg, cwd))
@@ -417,6 +262,60 @@ def check_segment(seg: list[str], cfg: Config, cwd: Path, depth: int = 0) -> lis
         if head in pack.commands:
             out.extend(_pack_run(pack, seg, low, cfg, cwd))
 
+    return out
+
+
+GIT_GLOBAL_VALUE = {"-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix", "--exec-path"}
+
+
+def _git_split(args: list[str], cwd: Path) -> tuple[list[str], Path]:
+    """Skip git's global options (`-C <dir>`, `-c k=v`, `--git-dir …`, `--no-pager`, `-p` …); return the lower-cased
+    subcommand with its arguments and the directory git will run in (`-C` may repeat and is relative)."""
+    i, gcwd, git_dir, work_tree = 0, cwd, None, None
+    while i < len(args):
+        a = args[i]
+        if a == "-C" and i + 1 < len(args):
+            gcwd = _as_path(args[i + 1], gcwd)
+            i += 2
+            continue
+        key, eq, val = a.partition("=")
+        if key.lower() in GIT_GLOBAL_VALUE:
+            if not eq:
+                val = args[i + 1] if i + 1 < len(args) else ""
+            if key.lower() == "--git-dir":
+                git_dir = _as_path(val, gcwd)
+            elif key.lower() == "--work-tree":
+                work_tree = _as_path(val, gcwd)
+            i += 1 if eq else 2
+            continue
+        if a.startswith("-"):
+            i += 1
+            continue
+        break
+    if work_tree is not None:                # the files a commit carries live in the work tree
+        gcwd = work_tree
+    elif git_dir is not None:
+        gcwd = git_dir.parent if git_dir.name.lower() == ".git" else git_dir
+    return [x.lower() for x in args[i:]], gcwd
+
+
+def _add_then_commit(segments: list[list[str]], cfg: Config, cwd: Path) -> list[Finding]:
+    """`git add x && git commit` in one command: the guard runs before `git add`, so the index does not hold the new
+    content yet. Judge what is on disk instead (secrets and, when on, file size)."""
+    staged_before, cur = False, cwd
+    out: list[Finding] = []
+    for seg in segments:
+        if seg and base(seg[0]) in CD and len(seg) > 1:      # `cd nested && git add … && git commit`
+            cur = _as_path(seg[1], cur)
+            continue
+        if not seg or base(seg[0]) != "git":
+            continue
+        sub, gcwd = _git_split(seg[1:], cur)
+        if sub[:1] in (["add"], ["stage"], ["mv"], ["rm"], ["apply"], ["update-index"]):
+            staged_before = True
+        elif sub[:1] == ["commit"] and staged_before:
+            out.extend(_worktree_secrets(cfg, gcwd))
+            out.extend(_structure_findings(sub, cfg, gcwd, force_disk=True, untracked=True))
     return out
 
 
@@ -516,226 +415,4 @@ def _outrigger_cli(args: list[str], cfg: Config, cwd: Path) -> list[Finding]:
         if files > cfg.limit("trash_max_files") or size > cfg.limit("trash_max_mb") * 1024 * 1024:
             return [Finding("medium", "bulk", f"bulk {sub}: {files} files, {size / 1048576:.1f} MB")]
     return []
-
-
-def _pack_run(pack, seg: list[str], low: list[str], cfg: Config, cwd: Path) -> list[Finding]:
-    headless = pack.always_headless or any(f in low for f in pack.headless_flags)
-    if not headless:
-        if pack.gui_always_ask:   # 0.4.1 (ADR-0013): the pack says opening this app costs something (a licence seat)
-            risk = "high" if pack.gui_level == "high" else "medium"
-            return [Finding(risk, "app-ask", f"opens {pack.name} interactively — L2; this pack asks every time "
-                                             "(gui_always_ask)", app=f"{pack.name} (GUI)")]
-        return [Finding(pack.gui_level, "app", f"opens {pack.name} interactively — L2", app=f"{pack.name} (GUI)")]
-    ext = pack.scan_extensions[0] if pack.scan_extensions else ""
-    if pack.scan_scope == "target":
-        return _pack_target(pack, seg, low, cfg, cwd, ext)
-    inline = " ".join(seg[1:])
-    hits = [f"<command>: {s}" for _, s in packs.scan_text(inline, pack, ext)]
-    hits += packs.scan_project(cfg, pack)
-    if hits:
-        shown = "; ".join(hits[:8]) + (f"; … +{len(hits) - 8} more" if len(hits) > 8 else "")
-        return [Finding("medium", "pack-danger",
-                        f"{pack.name} headless run, but the code contains dangerous calls: {shown}",
-                        app=f"{pack.name} (headless)")]
-    return [Finding("low", "pack-headless", f"{pack.name} headless run (L1), code scan clean", app=f"{pack.name} (headless)")]
-
-
-def _pack_target(pack, seg: list[str], low: list[str], cfg: Config, cwd: Path, ext: str) -> list[Finding]:
-    """Scan only what this command runs: inline code (`-c "..."`) and the script files it names.
-
-    Outrigger's own engine is trusted (it is protected from edits). Modules run with `-m` are not scanned:
-    that is a documented limit (R-07 in docs/RISK_REGISTER.md)."""
-    hits: list[str] = []
-    notes: list[Finding] = []
-    for i, flag in enumerate(low):  # `low` is seg[1:] lower-cased, so the code follows at seg[i + 2]
-        if flag in {"-c", "-e", "--eval", "-p", "--print"} and i + 2 < len(seg):
-            hits += [f"<{flag}>: {s}" for _, s in packs.scan_text(seg[i + 2], pack, ext)]
-    for a in seg[1:]:
-        if not a.lower().endswith(tuple(pack.scan_extensions)):
-            continue
-        rel = cfg.rel(a, cwd)
-        if rel is not None and (rel.lower().startswith(".outrigger/engine/") or state.is_trusted(cfg, rel)):
-            continue
-        p = (cfg.root / rel) if rel is not None else Path(a)
-        if not p.is_file():
-            continue
-        try:
-            text = p.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return [Finding("medium", "pack-unreadable", f"cannot read `{a}` to check it")]
-        # 0.3.1 (ADR-0010 B): a trusted script that was edited asks again only for dangerous lines it did not have
-        # when the human trusted it. Light mode only; strict keeps whole-file hashing. The snapshot holds the full
-        # text of each dangerous line, so changing the ARGUMENT of an old call (`os.remove(a)` → `os.remove(b)`)
-        # is a new line and asks. Not caught: changing a variable on another line that an old call uses (R-25).
-        snap = state.trusted_danger(cfg, rel) if (rel is not None and cfg.light) else None
-        if snap is not None:
-            new = packs.new_danger_lines(text, pack, p.suffix.lower(), snap)
-            if not new:
-                notes.append(Finding("low", "trusted-drift",
-                                     f"{rel} changed since it was trusted but adds no dangerous line (diff-scoped trust)"))
-                continue
-            hits += [f"{rel}:{n}: new since trust: {s}" for n, s in new]
-            continue
-        hits += [f"{rel or a}:{n}: {s}" for n, s in packs.scan_text(text, pack, p.suffix.lower())]
-    if hits:
-        shown = "; ".join(hits[:8]) + (f"; … +{len(hits) - 8} more" if len(hits) > 8 else "")
-        return notes + [Finding("medium", "pack-danger", f"{pack.name} script contains dangerous calls: {shown}")]
-    return notes
-
-
-# ---------------------------------------------------------------------------------------------
-# Scripts: what a command RUNS matters as much as the command itself (risk R-07, gap G-1).
-# Shell-like scripts are parsed and judged with the same rules as a typed command.
-# ---------------------------------------------------------------------------------------------
-
-SCRIPT_POSIX = {".sh", ".bash", ".zsh"}
-SCRIPT_WINDOWS = {".ps1", ".psm1", ".bat", ".cmd"}
-SCRIPT_EXTS = SCRIPT_POSIX | SCRIPT_WINDOWS
-SCRIPT_RUNNERS = {"bash", "sh", "zsh", "dash", "source", "powershell", "pwsh", "cmd"}
 NPM_RUNNERS = {"npm", "pnpm", "yarn", "bun"}
-NPM_LIFECYCLE = {"test", "start", "build", "stop", "restart"}
-INTERESTING = DELETE | SYSTEM_HIGH | SCHEDULE | NET | NET_OUT | set(INSTALLERS) | {"git", "reg", "netsh", "sc"}
-MAX_SCRIPT_DEPTH = 3
-MAX_SCRIPT_BYTES = 400_000
-
-
-def _ext(token: str) -> str:
-    return Path(token.strip("\"'")).suffix.lower()
-
-
-def _script_files(seg: list[str], head: str, cfg: Config, cwd: Path, depth: int) -> list[Finding]:
-    candidates = [seg[0]] if _ext(seg[0]) in SCRIPT_EXTS else []
-    if head in SCRIPT_RUNNERS:
-        candidates += [a for a in seg[1:] if _ext(a) in SCRIPT_EXTS]
-    out: list[Finding] = []
-    for c in candidates:
-        out.extend(_scan_script(c.strip("\"'"), cfg, cwd, depth))
-    return out
-
-
-def _strip_script_comments(text: str, ext: str) -> str:
-    if ext in {".bat", ".cmd"}:
-        return re.sub(r"(?im)^\s*(rem\b|::).*$", "", text)
-    if ext in {".ps1", ".psm1"}:
-        text = re.sub(r"(?s)<#.*?#>", "", text)
-    return re.sub(r"(?m)(^|\s)#.*$", r"\1", text)
-
-
-def _judge_text(text: str, posix: bool, cfg: Config, cwd: Path, depth: int) -> list[Finding]:
-    """Run the command rules over a piece of script text. Raises ParseError when it cannot be read safely."""
-    segments = split_commands(text, posix=posix)
-    found = check_raw(text, segments, cfg, cwd)
-    for seg in segments:
-        for i, tok in enumerate(seg):
-            if i == 0 or base(tok) in INTERESTING:      # also catches `if (...) { Remove-Item x }`
-                found += check_segment(seg[i:], cfg, cwd, depth + 1)
-    seen, out = set(), []
-    for f in found:
-        if f.risk != "low" and (f.code, f.reason) not in seen:
-            seen.add((f.code, f.reason))
-            out.append(f)
-    return out
-
-
-def _scan_script(arg: str, cfg: Config, cwd: Path, depth: int) -> list[Finding]:
-    rel = cfg.rel(arg, cwd)
-    label = rel or arg
-    if rel is not None and (rel.lower().startswith(".outrigger/engine/") or state.is_trusted(cfg, rel)):
-        return []
-    p = (cfg.root / rel) if rel is not None else Path(arg)
-    if not p.is_file():
-        return []
-    if depth >= MAX_SCRIPT_DEPTH:
-        return [Finding("medium", "script-depth", f"`{label}`: scripts call each other too deeply to check")]
-    try:
-        if p.stat().st_size > MAX_SCRIPT_BYTES:
-            return [Finding("medium", "script-too-large", f"`{label}` is too large to check")]
-        text = p.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return [Finding("medium", "script-unreadable", f"cannot read `{label}` to check it")]
-    ext = p.suffix.lower()
-    try:
-        found = _judge_text(_strip_script_comments(text, ext), ext in SCRIPT_POSIX, cfg, p.parent, depth)
-    except ParseError as exc:
-        return [Finding("medium", "script-unparsed", f"`{label}` cannot be parsed safely ({exc}) — review it, then `cli.py trust` it")]
-    return [Finding(f.risk, f.code if f.code.startswith("script") else f"script:{f.code}", f"`{label}` → {f.reason}", f.app)
-            for f in found[:12]]
-
-
-def _npm_script(head: str, args: list[str], cfg: Config, cwd: Path, depth: int) -> list[Finding]:
-    """`npm run clean` is only as safe as the `clean` entry in package.json."""
-    if not args or depth >= MAX_SCRIPT_DEPTH:
-        return []
-    first = args[0].lower()
-    if first in {"run", "run-script"} and len(args) > 1:
-        name = args[1]
-    elif first in NPM_LIFECYCLE or (head != "npm" and not first.startswith("-")):
-        name = args[0]
-    else:
-        return []
-    pkg = cwd / "package.json"
-    rel = cfg.rel(pkg, cwd)
-    if not pkg.is_file() or (rel is not None and state.is_trusted(cfg, rel)):
-        return []
-    try:
-        scripts = json.loads(pkg.read_text(encoding="utf-8", errors="replace")).get("scripts", {})
-    except (OSError, ValueError):
-        return [Finding("medium", "script-unreadable", "cannot read package.json to check the script")]
-    out: list[Finding] = []
-    for n in (f"pre{name}", name, f"post{name}"):
-        body = scripts.get(n) if isinstance(scripts, dict) else None
-        if not isinstance(body, str):
-            continue
-        try:
-            found = _judge_text(body, True, cfg, cwd, depth)
-        except ParseError as exc:
-            found = [Finding("medium", "script-unparsed", f"cannot be parsed safely ({exc})")]
-        out += [Finding(f.risk, f.code if f.code.startswith("script") else f"script:{f.code}",
-                        f"package.json script `{n}` → {f.reason}", f.app) for f in found[:8]]
-    return out
-
-
-# ---------------------------------------------------------------------------------------------
-# Secrets must not enter git history: once pushed they cannot be taken back (risk R-19).
-# ---------------------------------------------------------------------------------------------
-
-SECRET_COMMIT = [
-    ("AWS access key", re.compile(r"\b(AKIA|ASIA)[0-9A-Z]{16}\b")),
-    ("GitHub token", re.compile(r"\b(gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})")),
-    ("private key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
-    ("API key (sk-…)", re.compile(r"\bsk-[A-Za-z0-9_-]{32,}")),
-    ("Slack token", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}")),
-    ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
-    ("password inside a URL", re.compile(r"[a-z][a-z0-9+.-]*://[^/\s:@'\"]+:[^/\s:@'\"${}<>*]{6,}@[^\s/]+")),
-]
-
-
-def _staged_secrets(low: list[str], cfg: Config, cwd: Path) -> list[Finding]:
-    include_unstaged = any(a == "--all" or re.fullmatch(r"-[a-z]*a[a-z]*", a) for a in low[1:])
-    diffs = [["git", "diff", "--cached", "-U0", "--no-color"]]
-    if include_unstaged:
-        diffs.append(["git", "diff", "-U0", "--no-color"])
-    hits: list[str] = []
-    for cmd in diffs:
-        try:
-            r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
-        except (OSError, subprocess.SubprocessError) as exc:
-            return [Finding("medium", "secret-scan-failed", f"could not check the commit for secrets ({type(exc).__name__})")]
-        if r.returncode != 0:      # not a repository etc. — git itself will refuse the commit
-            continue
-        current = "?"
-        for line in r.stdout.splitlines():
-            if line.startswith("+++ "):
-                current = line[6:] if line.startswith("+++ b/") else line[4:]
-                if current != "/dev/null" and cfg.zone_of(current) == "red":
-                    hits.append(f"{current} (secret file)")
-            elif line.startswith("+"):
-                for label, pat in SECRET_COMMIT:
-                    if pat.search(line):
-                        hits.append(f"{current} ({label})")
-    hits = sorted(set(hits))
-    if not hits:
-        return []
-    shown = "; ".join(hits[:6]) + (f"; … +{len(hits) - 6} more" if len(hits) > 6 else "")
-    return [Finding("high", "secret-commit",
-                    f"the commit would put secrets into git history: {shown}. Remove them (and rotate the key if it was real)")]
