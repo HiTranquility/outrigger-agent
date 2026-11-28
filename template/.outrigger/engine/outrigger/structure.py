@@ -238,7 +238,7 @@ def _names(out: bytes) -> set[str]:
 
 
 def staged_findings(low: list[str], cfg: Config, cwd: Path, force_disk: bool = False,
-                    untracked: bool = False) -> list[Finding]:
+                    untracked: bool | list[str] = False) -> list[Finding]:
     """On `git commit` (low = ["commit", …]): judge the files the commit would carry. Fails closed."""
     s = settings(cfg)
     if not s["enabled"]:
@@ -263,7 +263,16 @@ def staged_findings(low: list[str], cfg: Config, cwd: Path, force_disk: bool = F
                 new = _git(top, "ls-files", "--others", "--exclude-standard", "-z")
                 if new.returncode != 0:
                     raise StructureError("listing new files failed")
-                names |= _names(new.stdout)
+                fresh = _names(new.stdout)
+                if not isinstance(untracked, bool):  # 0.7.0: `git add a.py && git commit` brings in a.py only
+                    fresh = set()                    # named files, from disk: `git add -f` brings ignored ones too
+                    for f in untracked:
+                        try:
+                            if Path(f).is_file():
+                                fresh.add(Path(f).resolve().relative_to(top.resolve()).as_posix())
+                        except ValueError:
+                            continue
+                names |= fresh
         keyed = {}
         for name in names:
             path = top / name
@@ -285,6 +294,8 @@ def staged_findings(low: list[str], cfg: Config, cwd: Path, force_disk: bool = F
                     big = _stream_lines(top / name)
                     if big > s["max_lines"]:
                         worst["lines"] = big
+                    elif key not in baseline:         # 0.7.0: a minified one-liner over 2 MB nobody can review
+                        hits.append(f"{key} size={(top / name).stat().st_size} bytes (new, over {MAX_BYTES} bytes)")
             for text in texts:
                 for m, v in over_limits(key, text, s).items():
                     worst[m] = max(worst.get(m, 0), v)

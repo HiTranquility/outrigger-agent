@@ -19,8 +19,41 @@ if sys.version_info < (3, 11):  # tomllib
     print("OUTRIGGER: Python 3.11+ required — blocking to stay safe.", file=sys.stderr)
     sys.exit(2)
 
-from outrigger import config, learn, notify, state  # noqa: E402
-from outrigger.decide import decide  # noqa: E402
+config = learn = notify = state = decide = None   # loaded in the process that judges (0.7.0: the supervising
+                                                  # parent stays light — it only starts the child and waits)
+
+
+def _load_engine() -> None:
+    global config, learn, notify, state, decide
+    from outrigger import config, learn, notify, state  # noqa: F811
+    from outrigger.decide import decide  # noqa: F811
+
+
+BUDGET_S = 20.0   # Claude Code gives the hook 30 s, and a hook that times out lets the tool RUN (review 0.7.0, P0)
+
+
+CHILD = "OUTRIGGER_JUDGE_CHILD"
+
+
+def _supervise(raw: bytes) -> int:
+    """Fail closed on time too. The call is judged in a child process the OS can stop: a thread timer cannot fire
+    while one long regex holds the GIL (review round 9). `OUTRIGGER_HOOK_BUDGET` (tests) may only LOWER the budget."""
+    import os
+    import subprocess
+    try:
+        budget = min(BUDGET_S, float(os.environ.get("OUTRIGGER_HOOK_BUDGET", BUDGET_S)))
+    except ValueError:
+        budget = BUDGET_S
+    try:
+        r = subprocess.run([sys.executable, "-X", "utf8", str(Path(__file__).resolve()), "claude", "pre-tool"],
+                           input=raw, capture_output=True, timeout=budget, env={**os.environ, CHILD: "1"})
+    except subprocess.TimeoutExpired:
+        print(f"OUTRIGGER: judging this call took longer than {budget:.0f} s — blocking to stay safe. "
+              "Split the command or shorten it.", file=sys.stderr)
+        return 2
+    sys.stdout.buffer.write(r.stdout)
+    sys.stderr.buffer.write(r.stderr)
+    return r.returncode if r.returncode in (0, 2) else 2   # anything else: fail closed
 
 
 def claude_pre_tool(payload: dict) -> int:
@@ -145,11 +178,16 @@ def stop(payload: dict) -> int:
 def main() -> int:
     platform = sys.argv[1] if len(sys.argv) > 1 else "claude"
     event = sys.argv[2] if len(sys.argv) > 2 else "pre-tool"
-    raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
-    payload = json.loads(raw) if raw.strip() else {}
+    data = sys.stdin.buffer.read()
     if platform != "claude":
         print(f"OUTRIGGER: platform '{platform}' is not supported in this release — blocking.", file=sys.stderr)
         return 2
+    import os
+    if event == "pre-tool" and os.environ.get(CHILD) != "1":
+        return _supervise(data)
+    _load_engine()
+    raw = data.decode("utf-8", errors="replace")
+    payload = json.loads(raw) if raw.strip() else {}
     if event == "pre-tool":
         return claude_pre_tool(payload)
     if event == "post-tool":

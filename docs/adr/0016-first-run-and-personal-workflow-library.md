@@ -67,6 +67,59 @@ instruction injected into every project that takes it.
   `mklink` into `.outrigger/local`, `git apply` of a patch that adds a promoted workflow, `python -c` writing a
   promoted workflow; and asks that are not needed: `pytest -k outrigger_home`, code that only reads
   `OUTRIGGER_HOME`, archives made *from* the library, `cd ~/.outrigger && git status`.
+- Closed before release (`Followups`, `StructureFollowups`): `| xargs`, `env -C`, `git -C … mv`, `git apply`
+  of a patch that adds a promoted workflow, `mklink`/`New-Item -ItemType Junction` into `.outrigger/local`, and
+  `python -c` writing a promoted workflow now ask; `pytest -k outrigger_home`, code that only reads the variable,
+  archives made *from* the library, read-only git in the library and `git commit -m "~/.outrigger/…"` no longer ask.
+  The three P3 gaps ADR-0015 left open are closed too: a new file over 2 MB that is one minified line asks;
+  `git add a.py && git commit` counts only the files it adds (`.`, globs, folders and `-A` still count everything);
+  `GIT_DIR=`/`GIT_WORK_TREE=`/`GIT_INDEX_FILE=` or `--git-dir` without `--work-tree` on a commit fails closed when
+  the gate is on. Engine files are back under the 400-line limit (`selftest.py`, `gitrules.py` split out).
+- Review round 5 (NOT PASS) on those follow-ups: narrowing reopened writes — `git config --file`, `git … --output=`
+  and `git -C <library> config|add|fetch|tag` were exempt as "read-only git"; `tar cf`, `zip --out`/`-O` and
+  `7z -o` hid their output. Rule kept since: **an exemption falls back to the general rule whenever it cannot be
+  sure** (archive output not found → judge every argument; read-only git exempts only the folder it runs in, never
+  its arguments). Also fixed: `--remove-files`/`zip -m`/`-sdel` (they delete what they pack), `printenv … | xargs`,
+  `env:OUTRIGGER_HOME`, `'wt'`/`touch` as write words, `.outrigger/./local`, `cd .outrigger/local && python -c …`,
+  and `git add` with braces, variables or `-f` (`ReviewRound5`, `StructureFollowups`).
+- Review round 6 (NOT PASS): a command hidden in an option value — `tar --checkpoint-action=exec=…`,
+  `--to-command`, `-I "tee …"`, zip `-TT "…"`, `git -c core.pager|alias|sshCommand|diff.external="…"` — reached the
+  library. Option values that hold a command line (whitespace or `!`) and every `-c`/`--config-env` value are now
+  text-checked; `--remove…` abbreviations, bundled zip `-rm`, and repeated tar `-f` are handled (`ReviewRound6`).
+- Review round 7 (NOT PASS): a variable set earlier in the same command (`D=~/.outrigger/library; cp a $D/`)
+  hid the path from every rule — older than this branch. And the general hole behind round 6: `git -c
+  core.pager='rm -rf ~' log`, `tar --checkpoint-action=exec='rm -rf ~'`, `zip -TT 'rm -rf ~'` ran with no finding
+  at all. Both fixed in one place, `libguard.hidden_commands`: the command is judged again with its `X=value`
+  assignments filled in, and every command line a tool will run from an option (tar `--checkpoint-action=exec`,
+  `--to-command`, `-I`/`--use-compress-program`, `--rsh-command`, `-F`; zip `-TT`/`--unzip-command`; git `-c` /
+  `--config-env` for pager, editor, sshCommand, fsmonitor, aliases with `!`, `*.command`, drivers…) is judged like a
+  typed command, script files included (R-35, `ReviewRound7`).
+- Review round 8 (NOT PASS, one P0): **time is a way through.** A regex with a look-ahead re-scanned the command
+  from every position; `rm -rf ~ #` + 90 KB of padding took 50 s, and a hook that outlasts Claude Code's 30 s
+  timeout lets the tool run. Fixed three ways: the check is linear and runs only when the gate is on; `rel()`
+  resolves each distinct path once; and the pre-tool hook has its own **20 s budget** — when it runs out the call is
+  denied (exit 2), so slowness fails closed like any other error (R-36). Also: an assignment value is one whole
+  shell word (`D="$HOME"/.outrigger/…`); variables that git or a pager run (`GIT_PAGER`, `GIT_SSH_COMMAND`,
+  `GIT_EXTERNAL_DIFF`, `EDITOR`, `PAGER`, `VISUAL`, `GIT_CONFIG_KEY_n`/`VALUE_n`, `GIT_CONFIG_PARAMETERS`) are judged
+  as commands; chains of assignments resolve up to 8 steps; hidden commands follow `cd` (`ReviewRound8`).
+- Review round 9 (NOT PASS, P0 still open): the thread timer cannot fire while one long regex holds the GIL —
+  `rm -rf ~ #` + `curl ` × 90,000 ran 119 s (the pipe-to-shell pattern, older than 0.7.0, was quadratic). Fixed for
+  real: the pre-tool hook now **judges in a child process** and the parent waits with an OS timeout (20 s), so no
+  input can keep the hook past the host's limit; the parent loads no engine code, which keeps the cost of the extra
+  process to about 0.1 s per call. The pipe-to-shell check is linear, and a shell command over 256,000 characters
+  asks without being judged (`command-too-long`, asked in light mode too). Also: `D+=…` appends to the earlier
+  value; a variable a tool writes a file to (`GIT_TRACE*`, `GIT_INDEX_FILE`, `HISTFILE`, `*_FILE`, `*_LOG`…) is
+  judged as a write; `GIT_CONFIG_PARAMETERS` in both quoting forms; `GIT_SSH_COMMAND="ssh -i key"` no longer
+  blocks (`ReviewRound9`).
+- Review round 10 (NOT PASS, one P1): a bash array `A=(<library>)` hid the path. Arrays now give their first
+  element, and **any** variable whose value lands in the library or a promoted folder asks when a command that is not
+  read-only follows (`HOME=…`, `TMPDIR=…`, `XDG_CONFIG_HOME=…` point a tool's folders there) (`ReviewRound10`).
+- Still open (P2/P3, all behind "import lands as a draft"): a script or config file named in an exec option or
+  variable (`GIT_SSH=s.sh`, `ssh -F cfg`, `core.hooksPath=dir`) is not read; `BROWSER`, `LESSOPEN` under `less`,
+  `PROMPT_COMMAND`, `BASH_ENV`, `PYTHONSTARTUP`, ANSI-C quoting `$'\x7e…'` and `${!E}` indirection; `pushd` with
+  no folder; a heredoc over 256 KB asks. Asks that are not needed, kept on purpose (narrowing reopened holes
+  twice): a variable pointing into the library or a promoted folder followed by any writing command, even when the
+  command only reads from it (`D=<library>; cp $D/x.md sandbox/`). Review round 11: PASS.
 - **Design limit, accepted:** the write side is best effort. A path assembled at run time from pieces that never spell
   the library (`'~/.outrig'+'ger'`), or written by a `.py` script the guard does not read for paths, is not seen
   (G-5). The library is therefore defended where it is **read**: every import is a draft the user must promote.

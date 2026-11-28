@@ -55,9 +55,10 @@ LIGHT_STILL_ASK = {
     "memory-suspicious", "agent-config",
     "structure-grow", "structure-check-failed",  # 0.6.0 (ADR-0015): file-size ratchet on git commit, opt-in
     "library-write", "library-export",           # 0.7.0 (ADR-0016): the personal library reaches every project
-    "workflow-promote",                          # 0.7.0: a workflow outside drafts/ is one the user promoted
+    "workflow-promote", "command-too-long",                          # 0.7.0: a workflow outside drafts/ is one the user promoted
 }
 PACK_ALWAYS = {"pack-ask", "app-ask"}
+MAX_COMMAND_CHARS = 256_000   # 0.7.0: longer shell commands ask (a heredoc of normal size stays far below)
 # Tools that only CREATE a file when it does not exist yet (append-only originals zone, ADR-0010). Edit-style tools
 # always change bytes that are already there, so they are never allowed in that zone.
 CREATE_TOOLS = {"write", "write_file", "create_file"}
@@ -200,7 +201,11 @@ def decide(cfg: Config, tool: str, tool_input: dict, cwd: Path) -> Decision:
     command = tool_input.get("command") or tool_input.get("cmd")
     if isinstance(command, list):
         command = " ".join(map(str, command))
-    if isinstance(command, str) and command.strip() and (short in SHELL_TOOLS or t.startswith("mcp__")):
+    if isinstance(command, str) and len(command) > MAX_COMMAND_CHARS and (short in SHELL_TOOLS or t.startswith("mcp__")):
+        # 0.7.0 (review round 9): nobody reviews a command this long, and judging it may outlast the hook budget
+        findings.append(Finding("medium", "command-too-long", f"the command is {len(command):,} characters long — "
+                                "put it in a script file, or ask the user to run it"))
+    elif isinstance(command, str) and command.strip() and (short in SHELL_TOOLS or t.startswith("mcp__")):
         posix = SHELL_TOOLS.get(short, True)
         try:
             segments = split_commands(command, posix=posix)

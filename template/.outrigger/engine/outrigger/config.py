@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import fnmatch
+import functools
 import os
 import re
 import tomllib
@@ -61,6 +62,15 @@ def _win_trim(posix: str) -> str:
     return "/".join(part if part in {".", ".."} else part.rstrip(". ") or part for part in posix.split("/"))
 
 
+@functools.lru_cache(maxsize=4096)
+def _rel_cached(path: str, root: str) -> str | None:
+    """One `resolve()` per distinct path per hook run: a long command repeats paths (0.7.0 review, time budget)."""
+    try:
+        return Path(path).resolve(strict=False).relative_to(Path(root).resolve()).as_posix()
+    except ValueError:
+        return None
+
+
 @dataclass
 class Pack:
     id: str
@@ -115,10 +125,7 @@ class Config:
         p = Path(expand(str(path)))
         if not p.is_absolute():
             p = (cwd or self.root) / p
-        try:
-            return p.resolve(strict=False).relative_to(self.root.resolve()).as_posix()
-        except ValueError:
-            return None
+        return _rel_cached(str(p), str(self.root))
 
     def zone_of(self, rel: str) -> str:
         z = self.section("zones")

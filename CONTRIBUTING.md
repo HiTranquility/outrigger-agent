@@ -9,7 +9,7 @@ judged first by "can it let something dangerous through?" and only then by conve
 
 1. **Standard library only**, Python ≥ 3.11. No third-party packages in `template/.outrigger/engine/`.
 2. **Fail closed.** When the guard cannot parse or check something, it asks; it never allows by default.
-3. **Every new guard rule** needs a test in `tests/` and, if a user can see it, a case in `cli.py` selftest `CASES`.
+3. **Every new guard rule** needs a test in `tests/` and, if a user can see it, a case in selftest `CASES` (`outrigger/selftest.py`).
 4. **Every rule traces to a loss**: add or extend a row in [`docs/RISK_REGISTER.md`](docs/RISK_REGISTER.md) that
    names the test (`Class.test_name`); `RegisterIntegrity` fails if the named test does not exist.
 5. **A decision with alternatives** is a new ADR in [`docs/adr/`](docs/adr/README.md). Never edit an accepted ADR's

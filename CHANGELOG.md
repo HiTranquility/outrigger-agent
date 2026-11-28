@@ -17,8 +17,17 @@ the risks each rule answers live in [`docs/RISK_REGISTER.md`](docs/RISK_REGISTER
   outside `drafts/` asks (`workflow-promote`).
 - **Fixed:** a command that must ask in light mode (`agent-config`, `library-write`, …) no longer passes when it sits
   inside a script the agent runs (`script:<code>`).
+- **Fixed (R-36):** a command long enough to make the guard outlast the hook timeout ran. The hook now judges in a
+  child process and denies when its 20 s budget runs out (about 0.1 s more per call); the slow check is linear; a
+  shell command over 256,000 characters asks.
+- **Fixed (R-35):** a command hidden in an option (`git -c core.pager=…`, `tar --checkpoint-action=exec=…`,
+  `--to-command`, `-I`, `zip -TT`) or behind a variable set earlier in the same command (`D=~; rm -rf $D`) ran
+  unjudged; it is now judged like a typed command.
 - **Fixed:** `cd` with no folder (home), `cd -P`/`--` and `Set-Location -Path` were followed to the wrong folder by
   every rule that follows `cd`.
+- **Structure gate (ADR-0015 gaps closed):** a new minified file over 2 MB asks; `git add a.py && git commit`
+  counts only what it adds; `GIT_DIR=` / `--git-dir` without `--work-tree` on a commit fails closed.
+- Engine: `selftest.py` and `gitrules.py` split out of `cli.py` and `rules.py` (both were over 400 lines).
 - Paths: PowerShell `$env:VAR` is expanded; Git Bash `/tmp` is `%TEMP%`; on Windows a trailing dot or space in a folder name no longer hides it.
 - **Fixed (R-34):** `cp`/`mv`/`tee`/`Copy-Item` into a folder outside the project was not judged.
 
